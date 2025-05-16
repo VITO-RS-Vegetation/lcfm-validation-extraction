@@ -1,0 +1,63 @@
+[project]
+name = "veg_project"
+dynamic = ["version"]
+authors = [
+  {name="VITO RS Vegetation team"},
+]
+description = "project_name"
+requires-python = ">=3.11, <3.12"
+dependencies = [
+  #add your dependenices here
+  "numpy==1.26.4",
+  "numba>=0.61.0",
+  "satio-pc>=0.0.16"
+]
+
+[dependency-groups]
+dev = ["pre-commit>=4.1.0", "pytest>=8.3.0", "ruff>=0.11.0"]
+
+[project.optional-dependencies]
+jupyter = ["jupyter>=1.1", "ipython>=8.21","ipywidgets==8.1.5", "ipykernel==6.29.5"]
+
+[tool.uv]
+default-groups = "all"
+
+[[tool.uv.index]]
+name = "vito-artifactory"
+url = "https://artifactory.vgt.vito.be/artifactory/api/pypi/python-packages-local/simple"
+publish-url = "https://artifactory.vgt.vito.be/artifactory/api/pypi/python-packages-local/"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu" }]
+torchvision = [{ index = "pytorch-cpu" }]
+satio-pc = [{ index = "vito-artifactory"}]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/veg_template"]
+
+[tool.hatch.build.targets.sdist]
+exclude = [
+  "/dist",
+  "/notebooks",
+  "/scripts"
+]
+
+[tool.hatch.version]
+path = "src/veg_template/_version.py"
+
+[tool.ruff]
+exclude = ["*.ipynb"]
+output-format = "github"
