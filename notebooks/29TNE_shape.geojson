@@ -1,0 +1,8 @@
+{
+"type": "FeatureCollection",
+"name": "29TNE_shape",
+"crs": { "type": "name", "properties": { "name": "urn:ogc:def:crs:OGC:1.3:CRS84" } },
+"features": [
+{ "type": "Feature", "properties": { "id": null }, "geometry": { "type": "MultiPolygon", "coordinates": [ [ [ [ -8.380329409600215, 40.408211447931691 ], [ -8.368164685510733, 40.336574739404739 ], [ -8.439801394037682, 40.340629647434568 ], [ -8.416823581868661, 40.405508175911805 ], [ -8.380329409600215, 40.408211447931691 ] ] ] ] } }
+]
+}
