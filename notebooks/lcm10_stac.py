@@ -10,6 +10,7 @@ import subprocess
 import boto3
 from dotenv import load_dotenv
 import geopandas as gpd
+from loguru import logger
 from pystac_client import Client
 import matplotlib.pyplot as plt
 import numpy as np
@@ -45,7 +46,7 @@ else:
 # Query
 
 
-def extract_location(gdf_pm):
+def extract_location(gdf_pm, product="LCM-10", version="v008", year=2020):
     loc_id = gdf_pm["id_loc"].iloc[0]
 
     # %%
@@ -117,25 +118,29 @@ def extract_location(gdf_pm):
     gdf = gpd.GeoDataFrame(index=[0], crs=gdf_pm.crs, geometry=[polygon])
     crs_utm = int(gdf_pm["UTM"].iloc[0])
     gdf = gdf.to_crs(crs_utm)
-    print("Original bounds:", gdf.iloc[0].geometry.bounds)
+    logger.debug("Original bounds:", gdf.iloc[0].geometry.bounds)
     # Update geometry with rounded bounds
     gdf.geometry = gdf.geometry.apply(
         lambda geom: Polygon.from_bounds(*[round(bound) for bound in geom.bounds])
     )
-    print("Rounded bounds:", gdf.iloc[0].geometry.bounds)
+    logger.debug("Rounded bounds:", gdf.iloc[0].geometry.bounds)
 
     geometry_latlon = gdf.to_crs("EPSG:4326").geometry.iloc[0]
 
     bounds = gdf.iloc[0].geometry.bounds
     span_x = bounds[2] - bounds[0]
     span_y = bounds[3] - bounds[1]
-    print("Size [m]", span_x, span_y)
+    logger.debug("Size [m]", span_x, span_y)
+    if span_x != 100 or span_y != 100:
+        raise ValueError(
+            f"Size of the bounding box is not 100m x 100m, but {span_x}m x {span_y}m"
+        )
 
     # %% [markdown]
     # Collection parameters
 
     # %%
-    collection = "LCFM_LCM-10_v008"
+    collection = f"LCFM_{product}_{version}"
     # These could also be inferred from the STAC collection
     resolution = 10
     nodata = 255
@@ -143,7 +148,6 @@ def extract_location(gdf_pm):
 
     # %%
     # Define the date range for the search
-    year = 2020
     start_date = datetime(year, 1, 1).isoformat() + "Z"
     end_date = datetime(year, 12, 12).isoformat() + "Z"
 
@@ -355,16 +359,18 @@ def extract_location(gdf_pm):
 
 
 def main():
+    # TODO: add command line arguments. product, version, year and shapefile. 100perc_sample_10m_epsg3857_idloc_selection.shp is the default shapefile.
+
     shapefile = "../resources/100perc_sample_10m_epsg3857_idloc_selection.shp"
     gdf_all = gpd.read_file(shapefile)
     loc_ids = gdf_all["id_loc"].unique().tolist()
 
     for loc_id in loc_ids:
-        print(f"Processing location {loc_id}")
+        logger.info(f"Processing location {loc_id}")
         gdf_pm = gdf_all[gdf_all["id_loc"] == loc_id].copy()
         extract_location(gdf_pm)
-        print("Done")
-        print("=====================================")
+        logger.info("Done")
+        logger.info("=====================================")
 
 
 if __name__ == "__main__":

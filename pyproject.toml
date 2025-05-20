@@ -10,6 +10,7 @@ dependencies = [
   "boto3",
   "dotenv",
   "geopandas",
+  "loguru",
   "matplotlib",
   "numpy < 2",
   "pystac_client",
