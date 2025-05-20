@@ -320,7 +320,7 @@ def extract_location(
 
     # %%
     filename = f"LCFM_{product}_{version.upper()}_{year}_{loc_id}_MAP"
-    output_file = f"{results_dir}/{filename}.tif"
+    output_file = f"{results_dir}/{filename}c.tif"
 
     with rasterio.open(
         output_file,
@@ -360,6 +360,13 @@ def extract_location(
             logger.debug(f"Pixel size (Y): {abs(transform[5])} meters")
             logger.debug(f"Upper left X: {transform[0]}")
             logger.debug(f"Upper left Y: {transform[3]}")
+
+        # Write to results/gdalinfo directory
+        gdalinfo_dir = os.path.join(results_dir, "gdalinfo")
+        os.makedirs(gdalinfo_dir, exist_ok=True)
+        gdalinfo_file = os.path.join(gdalinfo_dir, f"{filename}.json")
+        with open(gdalinfo_file, "w") as f:
+            json.dump(gdalinfo, f, indent=4)
     else:
         raise RuntimeError(f"gdalinfo command failed with error: {result.stderr}")
 
@@ -413,7 +420,7 @@ def main():
 
     # Dynamically check the current working directory
     cwd = os.getcwd()
-    base_dir = os.path.dirname(cwd) if os.path.basename(cwd) == "notebooks" else cwd
+    base_dir = os.path.dirname(cwd) if os.path.basename(cwd) == "scripts" else cwd
     shapefile_path = os.path.join(base_dir, "resources", args.shapefile)
     results_dir = os.path.join(base_dir, "results")
 
