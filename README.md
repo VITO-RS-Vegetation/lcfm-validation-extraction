@@ -25,7 +25,7 @@ source .venv/bin/activate
 ```
 
 ## Use
-Navigate to the notebooks folder and run:
+Navigate to the scripts folder and run:
 ```
 python lcm10_stac.py
 ```
