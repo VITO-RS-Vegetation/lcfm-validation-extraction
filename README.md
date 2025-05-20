@@ -41,5 +41,5 @@ Extractions require some actions from producer's side to work:
     - VITO: Run [tiler](https://github.com/VITO-RS-Vegetation/veg-workflows/blob/main/workflows/products/LCFM/LCM-10/tiling.py) with the --tiling utm argument
 2. Upload to S3 (exact path does not matter as long as it can be accessed and the STAC items refer to the correct path)
 3. Create a STAC collection for UTM tiles
-    - VITO: run [STAC builder](https://github.com/VitoTAP/stac-catalog-builder/tree/main/configs-datasets/lcfm)
+    - VITO: run [STAC builder](https://github.com/VitoTAP/stac-catalog-builder/tree/lcfm/configs-datasets/lcfm/LCM-10_utm)
 4. Distribute keys to S3 to users

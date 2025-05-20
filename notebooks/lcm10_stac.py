@@ -6,6 +6,7 @@ from datetime import datetime
 import os
 import json
 import subprocess
+import sys
 
 import boto3
 from dotenv import load_dotenv
@@ -46,7 +47,9 @@ else:
 # Query
 
 
-def extract_location(gdf_pm, product="LCM-10", version="v008", year=2020):
+def extract_location(
+    gdf_pm, product="LCM-10", version="v008", year=2020, results_dir="./results"
+):
     loc_id = gdf_pm["id_loc"].iloc[0]
 
     # %%
@@ -118,19 +121,19 @@ def extract_location(gdf_pm, product="LCM-10", version="v008", year=2020):
     gdf = gpd.GeoDataFrame(index=[0], crs=gdf_pm.crs, geometry=[polygon])
     crs_utm = int(gdf_pm["UTM"].iloc[0])
     gdf = gdf.to_crs(crs_utm)
-    logger.debug("Original bounds:", gdf.iloc[0].geometry.bounds)
+    logger.debug(f"Original bounds: {gdf.iloc[0].geometry.bounds}")
     # Update geometry with rounded bounds
     gdf.geometry = gdf.geometry.apply(
         lambda geom: Polygon.from_bounds(*[round(bound) for bound in geom.bounds])
     )
-    logger.debug("Rounded bounds:", gdf.iloc[0].geometry.bounds)
+    logger.debug(f"Rounded bounds: {gdf.iloc[0].geometry.bounds}")
 
     geometry_latlon = gdf.to_crs("EPSG:4326").geometry.iloc[0]
 
     bounds = gdf.iloc[0].geometry.bounds
     span_x = bounds[2] - bounds[0]
     span_y = bounds[3] - bounds[1]
-    logger.debug("Size [m]", span_x, span_y)
+    logger.debug(f"Size [m]: {span_x}, {span_y}")
     if span_x != 100 or span_y != 100:
         raise ValueError(
             f"Size of the bounding box is not 100m x 100m, but {span_x}m x {span_y}m"
@@ -170,11 +173,12 @@ def extract_location(gdf_pm, product="LCM-10", version="v008", year=2020):
 
     if items:
         # Print items found in the collection
-        print(f"Found {len(items)} items in the collection:")
+        logger.debug(f"Found {len(items)} items in the collection:")
         for item in items:
-            print(f"- {item.id}")
+            logger.debug(f"- {item.id}")
     else:
-        print("No items found in the collection.")
+        logger.debug("No items found in the collection.")
+        raise ValueError(f"No items found in the collection {collection}.")
 
     # %%
     # Select item from the list with matching crs
@@ -184,7 +188,7 @@ def extract_location(gdf_pm, product="LCM-10", version="v008", year=2020):
             item = i
             break
     if item:
-        print(item.id)
+        logger.debug(f"Selected {item.id} with matching CRS.")
         source_crs = crs_utm
         source_bounds = bounds
     else:
@@ -196,6 +200,9 @@ def extract_location(gdf_pm, product="LCM-10", version="v008", year=2020):
         source_crs = item.properties["proj:epsg"]
         # Reproject
         source_bounds = gdf.to_crs(source_crs).iloc[0].geometry.bounds
+        raise NotImplementedError(
+            f"No items match the requested CRS {crs_utm}. Reprojection implemented, but not checked."
+        )
 
     # %%
     # S3 session info
@@ -233,7 +240,7 @@ def extract_location(gdf_pm, product="LCM-10", version="v008", year=2020):
     map = stackstac.stack(
         [item],
         assets=assets,
-        bounds=bounds,
+        bounds=source_bounds,
         resolution=resolution,
         epsg=source_crs,
         fill_value=np.uint8(nodata),
@@ -297,10 +304,10 @@ def extract_location(gdf_pm, product="LCM-10", version="v008", year=2020):
 
     cmap = mcolors.ListedColormap(hex_colors, name="lc")
     # Build boundaries (one extra above highest)
-    bounds = list(class_values) + [
+    class_bounds = list(class_values) + [
         class_values[-1] + (class_values[-1] - class_values[-2])
     ]
-    norm = mcolors.BoundaryNorm(bounds, cmap.N)
+    norm = mcolors.BoundaryNorm(class_bounds, cmap.N)
 
     plt.figure(figsize=(10, 10))
     plt.imshow(map_asset, cmap=cmap, norm=norm)
@@ -312,8 +319,8 @@ def extract_location(gdf_pm, product="LCM-10", version="v008", year=2020):
     # ## Write
 
     # %%
-    filename = f"LCFM_LCM-10_{version.upper()}_{year}_{loc_id}_MAP"
-    output_file = f"../results/{filename}.tif"
+    filename = f"LCFM_{product}_{version.upper()}_{year}_{loc_id}_MAP"
+    output_file = f"{results_dir}/{filename}.tif"
 
     with rasterio.open(
         output_file,
@@ -349,27 +356,106 @@ def extract_location(gdf_pm, product="LCM-10", version="v008", year=2020):
         # Extract key information
         transform = gdalinfo.get("geoTransform", [])
         if transform:
-            print(f"\nPixel size (X): {transform[1]} meters")
-            print(f"Pixel size (Y): {abs(transform[5])} meters")
-            print(f"Upper left X: {transform[0]}")
-            print(f"Upper left Y: {transform[3]}")
+            logger.debug(f"Pixel size (X): {transform[1]} meters")
+            logger.debug(f"Pixel size (Y): {abs(transform[5])} meters")
+            logger.debug(f"Upper left X: {transform[0]}")
+            logger.debug(f"Upper left Y: {transform[3]}")
     else:
-        print(f"Error running gdalinfo: {result.stderr}")
-        geotransform = None
+        raise RuntimeError(f"gdalinfo command failed with error: {result.stderr}")
+
+    if transform[1] != resolution or abs(transform[5]) != resolution:
+        raise ValueError(
+            f"Pixel size is not {resolution}m, but {transform[1]}m x {abs(transform[5])}m"
+        )
+    # Check the bounds
+    if transform[0] != bounds[0] or transform[3] != bounds[3]:
+        raise ValueError(
+            f"Upper left corner is not {bounds[0]}, {bounds[3]}, but {transform[0]}, {transform[3]}"
+        )
 
 
 def main():
-    # TODO: add command line arguments. product, version, year and shapefile. 100perc_sample_10m_epsg3857_idloc_selection.shp is the default shapefile.
+    import argparse
 
-    shapefile = "../resources/100perc_sample_10m_epsg3857_idloc_selection.shp"
-    gdf_all = gpd.read_file(shapefile)
-    loc_ids = gdf_all["id_loc"].unique().tolist()
+    parser = argparse.ArgumentParser(description="Extract Map data using STAC API.")
+    parser.add_argument("-d", "--debug", action="store_true", help="Enable debug mode")
+    parser.add_argument(
+        "--product", type=str, default="LCM-10", help="Product name (default: LCM-10)"
+    )
+    parser.add_argument(
+        "--version", type=str, default="v008", help="Product version (default: v008)"
+    )
+    parser.add_argument(
+        "--year", type=int, default=2020, help="Year to process (default: 2020)"
+    )
+    parser.add_argument(
+        "--shapefile",
+        type=str,
+        default="100perc_sample_10m_epsg3857_idloc_selection.shp",
+        help="Shapefile name (default: 100perc_sample_10m_epsg3857_idloc_selection.shp",
+    )
+    parser.add_argument(
+        "--loc-ids",
+        "--loc_ids",
+        type=str,
+        default=None,
+        help="Comma-separated list of location IDs to process (default: all)",
+    )
+    args = parser.parse_args()
 
+    # Set logging level based on debug flag
+    logger.remove()  # Remove default handler
+    if args.debug:
+        logger.add(sys.stderr, level="DEBUG")
+        logger.debug("Debug mode enabled")
+    else:
+        logger.add(sys.stderr, level="INFO")
+
+    # Dynamically check the current working directory
+    cwd = os.getcwd()
+    base_dir = os.path.dirname(cwd) if os.path.basename(cwd) == "notebooks" else cwd
+    shapefile_path = os.path.join(base_dir, "resources", args.shapefile)
+    results_dir = os.path.join(base_dir, "results")
+
+    # Load the shapefile
+    logger.info(f"Loading shapefile: {shapefile_path}")
+    gdf_all = gpd.read_file(shapefile_path)
+
+    # Get location IDs to process
+    if args.loc_ids:
+        # If specific location IDs provided, split and convert to integers
+        loc_ids = [int(loc_id.strip()) for loc_id in args.loc_ids.split(",")]
+        # Verify that all requested IDs exist in the shapefile
+        all_loc_ids = gdf_all["id_loc"].unique().tolist()
+        missing_ids = [loc_id for loc_id in loc_ids if loc_id not in all_loc_ids]
+        if missing_ids:
+            logger.warning(
+                f"The following location IDs do not exist in the shapefile: {missing_ids}"
+            )
+            loc_ids = [loc_id for loc_id in loc_ids if loc_id in all_loc_ids]
+    else:
+        # Otherwise, process all location IDs
+        loc_ids = gdf_all["id_loc"].unique().tolist()
+
+    logger.info(
+        f"Processing {len(loc_ids)} locations with product={args.product}, version={args.version}, year={args.year}"
+    )
+
+    # Process each location
     for loc_id in loc_ids:
         logger.info(f"Processing location {loc_id}")
         gdf_pm = gdf_all[gdf_all["id_loc"] == loc_id].copy()
-        extract_location(gdf_pm)
-        logger.info("Done")
+        try:
+            extract_location(
+                gdf_pm,
+                product=args.product,
+                version=args.version,
+                year=args.year,
+                results_dir=results_dir,
+            )
+            logger.info("Done")
+        except Exception as e:
+            logger.error(f"Error processing location {loc_id}: {e}")
         logger.info("=====================================")
 
 

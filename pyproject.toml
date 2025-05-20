@@ -13,6 +13,7 @@ dependencies = [
   "loguru",
   "matplotlib",
   "numpy < 2",
+  "pystac <= 1.12.0",
   "pystac_client",
   "rasterio",
   "rioxarray",
