@@ -39,7 +39,10 @@ python lcm10_stac.py
 Extractions require some actions from producer's side to work:
 1. Tile to UTM tiles
     - VITO: Run [tiler](https://github.com/VITO-RS-Vegetation/veg-workflows/blob/main/workflows/products/LCFM/LCM-10/tiling.py) with the --tiling utm argument
-2. Upload to S3 (exact path does not matter as long as it can be accessed and the STAC items refer to the correct path)
+    - Note: these are full S2 tiles. It's possible to support "reduced" S2 tiles when reprojecting client-side (see "Limitations" above).
+2. Upload to S3
+    - Command: ```aws s3 sync --profile profile_name source target```
+    - Note: exact path does not matter as long as it can be accessed and the STAC items refer to the correct path
 3. Create a STAC collection for UTM tiles
     - VITO: run [STAC builder](https://github.com/VitoTAP/stac-catalog-builder/tree/lcfm/configs-datasets/lcfm/LCM-10_utm)
-4. Distribute keys to S3 to users
+4. Distribute S3 keys to users
