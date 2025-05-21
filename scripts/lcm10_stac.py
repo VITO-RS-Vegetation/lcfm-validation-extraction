@@ -320,7 +320,7 @@ def extract_location(
 
     # %%
     filename = f"LCFM_{product}_{version.upper()}_{year}_{loc_id}_MAP"
-    output_file = f"{results_dir}/{filename}c.tif"
+    output_file = f"{results_dir}/{filename}.tif"
 
     with rasterio.open(
         output_file,
