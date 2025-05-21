@@ -28,26 +28,24 @@ import stackstac
 from tqdm import tqdm
 
 
-def get_s3_session(profile="lcfm", auth_method="profile"):
-    # Authentication (fixed for now)
-    if auth_method != "profile":
+def get_s3_session(profile="lcfm"):
+    # Authentication
+    try:
+        b3 = boto3.Session(profile_name=profile)
+    except Exception as e:
         # Read s3 keys from .env files
         load_dotenv()
         os.environ["AWS_ACCESS_KEY_ID"] = os.getenv("AWS_ACCESS_KEY_ID")
         os.environ["AWS_SECRET_ACCESS_KEY"] = os.getenv("AWS_SECRET_ACCESS_KEY")
-    if profile == "gaf":
-        endpoint_url = "lcfm-datahub.gaf.de"
-    else:
-        endpoint_url = "s3.waw3-1.cloudferro.com"
-    # If profile, pass profile_name; otherwise use keys
-    if auth_method == "profile":
-        b3 = boto3.Session(profile_name=profile)
-    else:
         b3 = boto3.Session(
             aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
             aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
         )
-
+    if profile == "gaf":
+        endpoint_url = "lcfm-datahub.gaf.de"
+    else:
+        endpoint_url = "s3.waw3-1.cloudferro.com"
+    # Create a session with the specified endpoint URL
     aws_session = AWSSession(session=b3, endpoint_url=endpoint_url)
     # Create gdal env based on this
     gdal_env = stackstac.DEFAULT_GDAL_ENV.updated(
