@@ -3,31 +3,32 @@
 
 # %%
 import argparse
-from datetime import datetime
-import os
 import json
+import os
 import subprocess
 import sys
+from datetime import datetime
 from pathlib import Path
+from typing import List
 
 import boto3
-from dotenv import load_dotenv
 import geopandas as gpd
-from loguru import logger
-from pystac_client import Client
-import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
+import matplotlib.pyplot as plt
 import numpy as np
 import rasterio
+import rioxarray  # noqa: F401
+import stackstac
+import xarray
+from dotenv import load_dotenv
+from loguru import logger
+from pystac import Item
+from pystac_client import Client
 from rasterio.enums import ColorInterp, Resampling
 from rasterio.session import AWSSession
 from rasterio.transform import from_bounds
-import rioxarray
 from shapely.geometry import Polygon, shape
-import stackstac
 from tqdm import tqdm
-import xarray
-
 
 RGBA_TABLE = {
     10: [0, 100, 0, 255],
@@ -50,7 +51,7 @@ def get_s3_session(profile="lcfm"):
     # Authentication
     try:
         b3 = boto3.Session(profile_name=profile)
-    except Exception as e:
+    except Exception:
         # Read s3 keys from .env files
         load_dotenv()
         os.environ["AWS_ACCESS_KEY_ID"] = os.getenv("AWS_ACCESS_KEY_ID")
@@ -170,7 +171,9 @@ def create_gdf_utm(gdf_pm: gpd.GeoDataFrame, crs_utm: int) -> gpd.GeoDataFrame:
     return gdf
 
 
-def get_stac_items(geometry_latlon: Polygon, product: str, version: str, year: int):
+def get_stac_items(
+    geometry_latlon: Polygon, product: str, version: str, year: int
+) -> List[Item]:
     # Collection parameters
     collection = f"LCFM_{product}_{version}"
     # Define the date range for the search
@@ -191,7 +194,6 @@ def get_stac_items(geometry_latlon: Polygon, product: str, version: str, year: i
 
     # Check if items are found
     if items:
-        # Print items found in the collection
         logger.debug(f"Found {len(items)} items in the collection:")
         for item in items:
             logger.debug(f"- {item.id}")
