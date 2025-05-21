@@ -18,6 +18,7 @@ dependencies = [
   "rasterio",
   "rioxarray",
   "stackstac",
+  "tqdm",
 ]
 
 [dependency-groups]

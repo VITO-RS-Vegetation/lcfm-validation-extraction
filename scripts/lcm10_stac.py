@@ -25,6 +25,7 @@ from rasterio.transform import from_bounds
 import rioxarray
 from shapely.geometry import Polygon, shape
 import stackstac
+from tqdm import tqdm
 
 
 def get_s3_session(profile="lcfm", auth_method="profile"):
@@ -426,9 +427,10 @@ def main():
         f"Processing {len(loc_ids)} locations with product={args.product}, version={args.version}, year={args.year}"
     )
 
-    # Process each location
-    for loc_id in loc_ids:
-        logger.info(f"Processing location {loc_id}")
+    # Process each location, keeping track of failed locations
+    failed_locations = []
+    for loc_id in tqdm(loc_ids, desc="Processing locations"):
+        logger.debug(f"Processing location {loc_id}")
         gdf_pm = gdf_all[gdf_all["id_loc"] == loc_id].copy()
         try:
             extract_location(
@@ -438,10 +440,16 @@ def main():
                 year=args.year,
                 results_dir=results_dir,
             )
-            logger.info("Done")
         except Exception as e:
-            logger.error(f"Error processing location {loc_id}: {e}")
-        logger.info("=====================================")
+            failed_locations.append((loc_id, str(e)))
+
+    # Print summary of failed locations
+    if failed_locations:
+        logger.error(f"{len(failed_locations)} locations failed to process:")
+        for loc_id, error in failed_locations:
+            logger.error(f"Location {loc_id}: {error}")
+    else:
+        logger.info("All locations processed successfully!")
 
 
 if __name__ == "__main__":
