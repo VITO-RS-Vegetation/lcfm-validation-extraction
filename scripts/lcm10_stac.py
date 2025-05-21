@@ -50,7 +50,7 @@ RGBA_TABLE = {
 def get_s3_session(profile="lcfm"):
     # Authentication
     try:
-        b3 = boto3.Session(profile_name="test")
+        b3 = boto3.Session(profile_name=profile)
     except Exception:
         # Read s3 keys from .env file
         load_dotenv()
