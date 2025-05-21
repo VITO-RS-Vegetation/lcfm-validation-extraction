@@ -52,10 +52,8 @@ def get_s3_session(profile="lcfm"):
     try:
         b3 = boto3.Session(profile_name=profile)
     except Exception:
-        # Read s3 keys from .env files
+        # Read s3 keys from .env file
         load_dotenv()
-        os.environ["AWS_ACCESS_KEY_ID"] = os.getenv("AWS_ACCESS_KEY_ID")
-        os.environ["AWS_SECRET_ACCESS_KEY"] = os.getenv("AWS_SECRET_ACCESS_KEY")
         b3 = boto3.Session(
             aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
             aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
@@ -75,92 +73,19 @@ def get_s3_session(profile="lcfm"):
     return gdal_env
 
 
-def get_simple_polygon(union: Polygon) -> Polygon:
-    """
-    Get a simple polygon (4 points) from the union of geometries (4 points or more).
-    """
-    # Find the corners using convex hull properties
-    ch = union.convex_hull
-    ch_coords = np.array(list(ch.exterior.coords))
-
-    # Keep only the 4 most extreme points
-    min_x_idx = np.argmin(ch_coords[:, 0])
-    max_x_idx = np.argmax(ch_coords[:, 0])
-    min_y_idx = np.argmin(ch_coords[:, 1])
-    max_y_idx = np.argmax(ch_coords[:, 1])
-
-    # Get the 4 corner points
-    corner_indices = sorted(list(set([min_x_idx, max_x_idx, min_y_idx, max_y_idx])))
-
-    # Check if we have exactly 4 corners
-    if len(corner_indices) < 4:
-        # Alternative approach: get the actual corners from a simplified polygon
-        simplified = union.simplify(union.length / 100)  # Simplify to get fewer points
-        simple_coords = np.array(list(simplified.exterior.coords))
-
-        # Find points furthest from centroid
-        centroid = simplified.centroid
-        distances = [
-            point.distance(centroid)
-            for point in [
-                Polygon([simple_coords[i : i + 2]])
-                for i in range(len(simple_coords) - 1)
-            ]
-        ]
-        sorted_indices = np.argsort(distances)[
-            -4:
-        ]  # Get 4 points furthest from centroid
-        corner_points = [tuple(simple_coords[i]) for i in sorted_indices]
-    else:
-        corner_points = [tuple(ch_coords[i]) for i in corner_indices]
-
-    # Get the centroid for initialization
-    centroid = union.centroid
-    centroid_point = (centroid.x, centroid.y)
-
-    # Initialize points with the centroid coordinates (will be replaced by actual corners)
-    ul = ur = ll = lr = centroid_point
-
-    for point in corner_points:
-        x, y = point
-        # Upper Left (lowest x, highest y)
-        if x <= ul[0] and y >= ul[1]:
-            ul = point
-        # Upper Right (highest x, highest y)
-        if x >= ur[0] and y >= ur[1]:
-            ur = point
-        # Lower Left (lowest x, lowest y)
-        if x <= ll[0] and y <= ll[1]:
-            ll = point
-        # Lower Right (highest x, lowest y)
-        if x >= lr[0] and y <= lr[1]:
-            lr = point
-
-    # Create a properly ordered corner points list
-    corner_points = [ul, ur, lr, ll]
-    polygon = Polygon(corner_points)
-    return polygon
-
-
 def create_gdf_utm(gdf_pm: gpd.GeoDataFrame, crs_utm: int) -> gpd.GeoDataFrame:
     """
     Create a new GeoDataFrame from the input one and reproject it to the specified UTM CRS.
     """
-    # Get polygon from the shapefile
-    union = gdf_pm.union_all()
-    polygon = get_simple_polygon(union)
+    # Get bounds
+    bounds = gdf_pm.to_crs(crs_utm).total_bounds.round()
+    logger.debug(f"Bounds: {bounds}")
 
-    gdf = gpd.GeoDataFrame(index=[0], crs=gdf_pm.crs, geometry=[polygon])
-    gdf = gdf.to_crs(crs_utm)
-    logger.debug(f"Original bounds: {gdf.iloc[0].geometry.bounds}")
-    # Update geometry with rounded bounds
-    gdf.geometry = gdf.geometry.apply(
-        lambda geom: Polygon.from_bounds(*[round(bound) for bound in geom.bounds])
-    )
-    logger.debug(f"Rounded bounds: {gdf.iloc[0].geometry.bounds}")
+    # Create a new GeoDataFrame with the specified UTM CRS
+    polygon = Polygon.from_bounds(*bounds)
+    gdf = gpd.GeoDataFrame(index=[0], crs=crs_utm, geometry=[polygon])
 
     # Check span
-    bounds = gdf.iloc[0].geometry.bounds
     span_x = bounds[2] - bounds[0]
     span_y = bounds[3] - bounds[1]
     logger.debug(f"Size [m]: {span_x}, {span_y}")
