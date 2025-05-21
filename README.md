@@ -12,7 +12,7 @@ Install `uv`:
 curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
-Synv the virtual environment.
+Sync the virtual environment.
 
 ```
 uv sync --all-extras
@@ -32,7 +32,6 @@ python lcm10_stac.py
 
 ### Limitations:
 - Reprojection case not checked --> this will raise an error instead
-- Needs a STAC collection, which preferably contains UTM tiles (cfr. above)
 - Limited to CloudFerro's S3; GAF's does not work --> can't ping lcfm-datahub.gaf.de, whereas this is possible for s3.waw3-1.cloudferro.com, so likely a firewall issue at GAF's side
 
 ### Prerequisites:
