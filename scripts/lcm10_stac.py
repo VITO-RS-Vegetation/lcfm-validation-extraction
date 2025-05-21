@@ -26,6 +26,24 @@ import rioxarray
 from shapely.geometry import Polygon, shape
 import stackstac
 from tqdm import tqdm
+import xarray
+
+
+RGBA_TABLE = {
+    10: [0, 100, 0, 255],
+    20: [255, 187, 34, 255],
+    30: [255, 255, 76, 255],
+    40: [240, 150, 255, 255],
+    50: [250, 0, 0, 255],
+    60: [180, 180, 180, 255],
+    70: [240, 240, 240, 255],
+    80: [0, 100, 200, 255],
+    90: [0, 150, 160, 255],
+    100: [250, 230, 160, 255],
+    110: [0, 207, 117, 255],
+    254: [0, 0, 0, 255],
+    255: [0, 0, 0, 0],
+}
 
 
 def get_s3_session(profile="lcfm"):
@@ -123,11 +141,15 @@ def get_simple_polygon(union: Polygon) -> Polygon:
     return polygon
 
 
-def create_gdf(polygon: Polygon, source_crs: int, crs_utm: int) -> gpd.GeoDataFrame:
+def create_gdf_utm(gdf_pm: gpd.GeoDataFrame, crs_utm: int) -> gpd.GeoDataFrame:
     """
-    Create a GeoDataFrame from the polygon and reproject it to the specified UTM CRS.
+    Create a new GeoDataFrame from the input one and reproject it to the specified UTM CRS.
     """
-    gdf = gpd.GeoDataFrame(index=[0], crs=source_crs, geometry=[polygon])
+    # Get polygon from the shapefile
+    union = gdf_pm.union_all()
+    polygon = get_simple_polygon(union)
+
+    gdf = gpd.GeoDataFrame(index=[0], crs=gdf_pm.crs, geometry=[polygon])
     gdf = gdf.to_crs(crs_utm)
     logger.debug(f"Original bounds: {gdf.iloc[0].geometry.bounds}")
     # Update geometry with rounded bounds
@@ -135,6 +157,16 @@ def create_gdf(polygon: Polygon, source_crs: int, crs_utm: int) -> gpd.GeoDataFr
         lambda geom: Polygon.from_bounds(*[round(bound) for bound in geom.bounds])
     )
     logger.debug(f"Rounded bounds: {gdf.iloc[0].geometry.bounds}")
+
+    # Check span
+    bounds = gdf.iloc[0].geometry.bounds
+    span_x = bounds[2] - bounds[0]
+    span_y = bounds[3] - bounds[1]
+    logger.debug(f"Size [m]: {span_x}, {span_y}")
+    if span_x != 100 or span_y != 100:
+        raise ValueError(
+            f"Size of the bounding box is not 100m x 100m, but {span_x}m x {span_y}m"
+        )
     return gdf
 
 
@@ -169,41 +201,23 @@ def get_stac_items(geometry_latlon: Polygon, product: str, version: str, year: i
     return items
 
 
-def extract_location(
-    gdf_pm: gpd.GeoDataFrame,
-    product="LCM-10",
-    version="v008",
-    year=2020,
-    results_dir=Path("./results"),
-    profile="lcfm",
-):
-    loc_id = gdf_pm["id_loc"].iloc[0]
-
-    # Get polygon from the shapefile
-    union = gdf_pm.union_all()
-    polygon = get_simple_polygon(union)
-
-    # Create a gdf from the polygon
-    crs_utm = int(gdf_pm["UTM"].iloc[0])
-    gdf = create_gdf(polygon, gdf_pm.crs, crs_utm)
-
+def get_map_asset(
+    gdf: gpd.GeoDataFrame,
+    product: str,
+    resolution: int,
+    nodata: int,
+    version: str,
+    year: int,
+    profile: str = "lcfm",
+) -> xarray.DataArray:
+    crs_utm = int(str(gdf.crs).split(":")[-1])
     geometry_latlon = gdf.to_crs("EPSG:4326").geometry.iloc[0]
-    bounds = gdf.iloc[0].geometry.bounds
-
-    # Check span
-    span_x = bounds[2] - bounds[0]
-    span_y = bounds[3] - bounds[1]
-    logger.debug(f"Size [m]: {span_x}, {span_y}")
-    if span_x != 100 or span_y != 100:
-        raise ValueError(
-            f"Size of the bounding box is not 100m x 100m, but {span_x}m x {span_y}m"
-        )
+    bounds_utm = gdf.iloc[0].geometry.bounds
+    span_x = bounds_utm[2] - bounds_utm[0]
+    span_y = bounds_utm[3] - bounds_utm[1]
 
     # Get STAC items
     items = get_stac_items(geometry_latlon, product, version, year)
-    # Fixed, though these could also be inferred from the STAC collection
-    resolution = 10
-    nodata = 255
 
     # Select item from the list with matching crs
     item = None
@@ -214,7 +228,7 @@ def extract_location(
     if item:
         logger.debug(f"Selected {item.id} with matching CRS.")
         source_crs = crs_utm
-        source_bounds = bounds
+        source_bounds = bounds_utm
     else:
         # TODO: refine the selection of the item
         item = min(
@@ -256,7 +270,9 @@ def extract_location(
 
     # Reproject if needed
     if source_crs != crs_utm:
-        transform = from_bounds(*bounds, (span_x / resolution), (span_y / resolution))
+        transform = from_bounds(
+            *bounds_utm, (span_x / resolution), (span_y / resolution)
+        )
         map = map.rio.reproject(
             f"EPSG:{crs_utm}",
             resampling=Resampling.nearest,
@@ -264,28 +280,15 @@ def extract_location(
         )
     # Extract the bands
     map_asset = map.sel(band="map")
+    return map_asset
 
-    # Your RGBA table
-    rgba_table = {
-        10: [0, 100, 0, 255],
-        20: [255, 187, 34, 255],
-        30: [255, 255, 76, 255],
-        40: [240, 150, 255, 255],
-        50: [250, 0, 0, 255],
-        60: [180, 180, 180, 255],
-        70: [240, 240, 240, 255],
-        80: [0, 100, 200, 255],
-        90: [0, 150, 160, 255],
-        100: [250, 230, 160, 255],
-        110: [0, 207, 117, 255],
-        254: [0, 0, 0, 255],
-        255: [0, 0, 0, 0],
-    }
+
+def create_plot(asset: xarray.DataArray):
     # sort by key and build hex list & class values
     class_values, hex_colors = zip(
         *[
             (k, mcolors.to_hex(np.array(v) / 255.0))
-            for k, v in sorted(rgba_table.items())
+            for k, v in sorted(RGBA_TABLE.items())
             if k not in (254, 255)  # skip background/no‐data if you like
         ]
     )
@@ -298,33 +301,13 @@ def extract_location(
 
     # Plot the map
     plt.figure(figsize=(10, 10))
-    plt.imshow(map_asset, cmap=cmap, norm=norm)
+    plt.imshow(asset, cmap=cmap, norm=norm)
     plt.title("Land‐cover classification")
     plt.axis("off")
     plt.show()
 
-    # Write
-    filename = f"LCFM_{product}_{version.upper()}_{year}_{loc_id}_MAP"
-    output_file = f"{results_dir}/{filename}.tif"
-    with rasterio.open(
-        output_file,
-        "w",
-        driver="GTiff",
-        height=map_asset.rio.height,
-        width=map_asset.rio.width,
-        count=1,
-        dtype=map_asset.dtype,
-        crs=map_asset.rio.crs,
-        transform=map_asset.rio.transform(),
-        compress="LZW",
-        nodata=nodata,
-    ) as dst:
-        dst.write(map_asset.values, 1)
-        dst.set_band_description(1, "MAP")
-        dst.colorinterp = [ColorInterp.palette]
-        dst.write_colormap(1, rgba_table)
 
-    # Check: run gdalinfo command
+def run_gdalinfo(output_file, bounds, resolution, results_dir, filename):
     result = subprocess.run(
         ["gdalinfo", output_file, "-json"], capture_output=True, text=True
     )
@@ -357,6 +340,57 @@ def extract_location(
         raise ValueError(
             f"Upper left corner is not {bounds[0]}, {bounds[3]}, but {transform[0]}, {transform[3]}"
         )
+
+
+def extract_location(
+    gdf_pm: gpd.GeoDataFrame,
+    product="LCM-10",
+    version="v008",
+    year=2020,
+    results_dir=Path("./results"),
+    profile="lcfm",
+):
+    loc_id = gdf_pm["id_loc"].iloc[0]
+
+    # Create a new gdf from the input one
+    crs_utm = int(gdf_pm["UTM"].iloc[0])
+    gdf = create_gdf_utm(gdf_pm, crs_utm)
+    bounds_utm = gdf.iloc[0].geometry.bounds
+
+    # Fixed, though these could also be inferred from the STAC collection
+    resolution = 10
+    nodata = 255
+
+    # Get map asset
+    map_asset = get_map_asset(
+        gdf, product, resolution, nodata, version, year, profile=profile
+    )
+
+    create_plot(map_asset)
+
+    # Write
+    filename = f"LCFM_{product}_{version.upper()}_{year}_{loc_id}_MAP"
+    output_file = f"{results_dir}/{filename}.tif"
+    with rasterio.open(
+        output_file,
+        "w",
+        driver="GTiff",
+        height=map_asset.rio.height,
+        width=map_asset.rio.width,
+        count=1,
+        dtype=map_asset.dtype,
+        crs=map_asset.rio.crs,
+        transform=map_asset.rio.transform(),
+        compress="LZW",
+        nodata=nodata,
+    ) as dst:
+        dst.write(map_asset.values, 1)
+        dst.set_band_description(1, "MAP")
+        dst.colorinterp = [ColorInterp.palette]
+        dst.write_colormap(1, RGBA_TABLE)
+
+    # Check: run gdalinfo command
+    run_gdalinfo(output_file, bounds_utm, resolution, results_dir, filename)
 
 
 def main():
