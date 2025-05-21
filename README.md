@@ -24,6 +24,12 @@ Next, activate the environment:
 source .venv/bin/activate
 ```
 
+Last, make sure the application can access the designated S3 storage. Either create a profile "lcfm" with the aws cli or create a .env file in this repository with the following contents:
+```
+AWS_ACCESS_KEY_ID=xxx
+AWS_SECRET_ACCESS_KEY=yyy
+```
+
 ## Use
 Navigate to the scripts folder and run:
 ```

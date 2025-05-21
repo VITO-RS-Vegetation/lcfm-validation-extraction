@@ -50,12 +50,10 @@ RGBA_TABLE = {
 def get_s3_session(profile="lcfm"):
     # Authentication
     try:
-        b3 = boto3.Session(profile_name=profile)
+        b3 = boto3.Session(profile_name="test")
     except Exception:
-        # Read s3 keys from .env files
+        # Read s3 keys from .env file
         load_dotenv()
-        os.environ["AWS_ACCESS_KEY_ID"] = os.getenv("AWS_ACCESS_KEY_ID")
-        os.environ["AWS_SECRET_ACCESS_KEY"] = os.getenv("AWS_SECRET_ACCESS_KEY")
         b3 = boto3.Session(
             aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
             aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
