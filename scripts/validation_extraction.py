@@ -133,7 +133,7 @@ def process_loc(
     blocks_epsgs = blocks.epsg.unique()
     # Check if all blocks are in the same EPSG
 
-    out_fn = output_path / f"{id_loc}.tif"
+    out_fn = output_path / f"LCFM_{product}{version.upper()}_{id_loc}_MAP.tif"
 
     tmp_folder = output_path / f"tmp_{id_loc}"
     tmp_folder.mkdir(exist_ok=True, parents=True)
