@@ -9,14 +9,18 @@ from rasterio.vrt import WarpedVRT
 from tqdm.auto import tqdm
 
 
-def get_block_path(lcm10_version, lcm10_path):
+def get_block_path(product, version, product_path):
     def wrapped_get_block_path(row):
         tile = row.tile
         block_id = row.block_id
-        # LCFM/LCM-10/v008-m10-c84/blocks/16/S/GA/2020/MAP/LCFM_LCM-10_V008-M10-C84_2020_16SGA_100_MAP.tif
-        path = f"{lcm10_path}/LCFM/LCM-10/{lcm10_version}/blocks/{tile[:2]}/{tile[2]}/{tile[-2:]}/2020/MAP/LCFM_LCM-10_{lcm10_version.upper()}_2020_{tile}_{block_id:03d}_MAP.tif"
-
-        return path
+        if product == "LCM-10":
+            # LCFM/LCM-10/v008-m10-c84/blocks/16/S/GA/2020/MAP/LCFM_LCM-10_V008-M10-C84_2020_16SGA_100_MAP.tif
+            return f"{product_path}/LCFM/LCM-10/{version}/blocks/{tile[:2]}/{tile[2]}/{tile[-2:]}/2020/MAP/LCFM_LCM-10_{version.upper()}_2020_{tile}_{block_id:03d}_MAP.tif"
+        elif product == "TCD-10":
+            # data/lcfm/TCD-10-raw/data_v2/LSF-ANNUAL_v100/TCD_v01-alpha02-harm/blocks/51/R/TP/2020/TCD-10/LCFM_LSF-ANNUAL_V100_2020_51RTP_026_TCD-10_masked.ti
+            return f"{product_path}/{tile[:2]}/{tile[2]}/{tile[-2:]}/2020/TCD-10/LCFM_LSF-ANNUAL_{version.upper()}_2020_{tile}_{block_id:03d}_TCD-10_masked.tif"
+        else:
+            raise NotImplementedError
 
     return wrapped_get_block_path
 
@@ -110,7 +114,7 @@ def load_blocks(loc_geom, loc_epsg, blocks_grid_path):
 
 
 def process_loc(
-    gdf, id_loc, blocks_grid_path, lcm10_version, lcm10_path, output_path
+    gdf, id_loc, blocks_grid_path, product, version, product_path, output_path
 ):
     loc_gdf = gdf[gdf["id_loc"] == id_loc]
     loc_geom = loc_gdf.union_all()
@@ -124,7 +128,7 @@ def process_loc(
         return
 
     blocks["path"] = blocks.apply(
-        get_block_path(lcm10_version, lcm10_path), axis=1
+        get_block_path(product, version, product_path), axis=1
     )
     blocks_epsgs = blocks.epsg.unique()
     # Check if all blocks are in the same EPSG
@@ -220,21 +224,28 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Extract patches from LCFM blocks for a given location"
     )
+    product_group = parser.add_mutually_exclusive_group(required=True)
+    product_group.add_argument(
+        "-l",
+        "--lcm10-path",
+        type=str,
+        help="LCFM path to use",
+    )
+    product_group.add_argument(
+        "-t",
+        "--tcd10-path",
+        type=str,
+        help="TCD path to use",
+    )
 
     parser.add_argument(
         "-v",
-        "--lcm10-version",
+        "--version",
         type=str,
         default="v008-m10-c84",
-        help="LCFM version to use",
+        help="LCM / TCD version to use",
     )
-    parser.add_argument(
-        "-p",
-        "--lcm10-path",
-        type=str,
-        default="/vitodata/vegteam_vol2/products",
-        help="LCFM path to use",
-    )
+
     parser.add_argument(
         "-b",
         "--blocks-grid-path",
@@ -256,8 +267,17 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
-    lcm10_version = args.lcm10_version
-    lcm10_path = args.lcm10_path
+    version = args.version
+    if args.lcm10_path:
+        product = "LCM-10"
+        product_path = args.lcm10_path
+    elif args.tcd10_path:
+        product = "TCD-10"
+        product_path = args.tcd10_path
+    else:
+        # Should not tigger as the mutually exclusive group is `required=True`, just to be sure
+        raise NotImplementedError("Please provide one of --lcm10_path or --tcd10_path")
+
     blocks_grid_path = args.blocks_grid_path
     input_shapefile = args.input_shapefile
     output_path = Path(args.output_path)
@@ -275,7 +295,8 @@ if __name__ == "__main__":
             gdf,
             id_loc,
             blocks_grid_path,
-            lcm10_version,
-            lcm10_path,
+            product,
+            version,
+            product_path,
             output_path,
         )
