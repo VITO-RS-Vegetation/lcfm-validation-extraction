@@ -25,9 +25,15 @@ source .venv/bin/activate
 ```
 
 ## Use
+
 Navigate to the scripts folder and run:
 ```
 python lcm10_stac.py
+```
+
+Alternatively, run:
+```
+python scripts/validation_extraction.py -l /vitodata/vegteam_vol2/products -b ./resources/ resources/100perc_sample_10m_epsg3857_idloc_selection.shp
 ```
 
 ### Limitations:

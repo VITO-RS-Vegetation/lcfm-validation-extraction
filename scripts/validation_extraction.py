@@ -1,12 +1,54 @@
+import os
 from pathlib import Path
+from typing import Tuple
 
+import boto3
 import geopandas as gpd
 import rasterio
+from dotenv import load_dotenv
 from loguru import logger
 from rasterio.enums import Resampling
 from rasterio.merge import merge
 from rasterio.vrt import WarpedVRT
 from tqdm.auto import tqdm
+
+# Set the working directory
+work_dir = Path(__file__).parent.parent.resolve()
+os.chdir(work_dir)
+
+
+def get_s3_session(profile="lcfm") -> Tuple[boto3.Session, str]:
+    # Authentication
+    # Check if the profile exists before trying to use it
+    available_profiles = boto3.Session().available_profiles
+
+    if profile in available_profiles:
+        logger.debug(f"Using AWS profile: {profile}")
+        b3_session = boto3.Session(profile_name=profile)
+    else:
+        logger.warning(
+            f"AWS profile '{profile}' not found. Using environment variables."
+        )
+        # Read s3 keys from .env files
+        load_dotenv()
+        os.environ["AWS_ACCESS_KEY_ID"] = os.getenv("AWS_ACCESS_KEY_ID")
+        os.environ["AWS_SECRET_ACCESS_KEY"] = os.getenv("AWS_SECRET_ACCESS_KEY")
+        b3_session = boto3.Session(
+            aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
+            aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
+        )
+    if profile == "gaf":
+        endpoint_url = "https://lcfm-datahub.gaf.de"
+        bucket_name = "vito-upload"
+    else:
+        endpoint_url = "https://s3.waw3-1.cloudferro.com"
+        bucket_name = "lcfm_waw3-1_4b82fdbbe2580bdfc4f595824922507c0d7cae2541c0799982"
+    s3_client = b3_session.client(
+        "s3",
+        endpoint_url=endpoint_url,
+        region_name=None,  # Set to None or specify if required
+    )
+    return s3_client, bucket_name
 
 
 def get_block_path(product, version, product_path):
@@ -250,7 +292,13 @@ if __name__ == "__main__":
         "-b",
         "--blocks-grid-path",
         type=str,
-        default="/vitodata/vegteam/auxdata/grid/blocks_global/blocks_global_v12.fgb",
+        default="/vitodata/vegteam/auxdata/grid/blocks_global2/",
+        help="Path to the blocks grid shapefile",
+    )
+    parser.add_argument(
+        "--blocks-grid-file",
+        type=str,
+        default="blocks_global_v12.fgb",
         help="Path to the blocks grid shapefile",
     )
     parser.add_argument(
@@ -278,7 +326,22 @@ if __name__ == "__main__":
         # Should not tigger as the mutually exclusive group is `required=True`, just to be sure
         raise NotImplementedError("Please provide one of --lcm10_path or --tcd10_path")
 
-    blocks_grid_path = args.blocks_grid_path
+    # If blocks grid path does not exist, download it from S3
+    blocks_grid_path = Path(args.blocks_grid_path) / args.blocks_grid_file
+    if not blocks_grid_path.exists():
+        logger.info(
+            f"Blocks grid path {blocks_grid_path} does not exist, downloading from S3"
+        )
+        s3_client, bucket_name = get_s3_session()
+        s3_file = Path("vito/grids/") / args.blocks_grid_file
+        blocks_grid_path = Path("./resources/") / args.blocks_grid_file
+        blocks_grid_path.parent.mkdir(exist_ok=True, parents=True)
+        s3_client.download_file(
+            bucket_name,
+            str(s3_file),
+            str(blocks_grid_path),
+        )
+        logger.info(f"Downloaded blocks grid to {blocks_grid_path}")
     input_shapefile = args.input_shapefile
     output_path = Path(args.output_path)
 
