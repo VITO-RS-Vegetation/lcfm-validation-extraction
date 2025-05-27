@@ -8,7 +8,9 @@ import rasterio
 from dotenv import load_dotenv
 from loguru import logger
 from rasterio.enums import Resampling
+from rasterio.env import Env
 from rasterio.merge import merge
+from rasterio.session import AWSSession
 from rasterio.vrt import WarpedVRT
 from tqdm.auto import tqdm
 
@@ -17,7 +19,7 @@ work_dir = Path(__file__).parent.parent.resolve()
 os.chdir(work_dir)
 
 
-def get_s3_session(profile="lcfm") -> Tuple[boto3.Session, str]:
+def get_s3_session(profile="lcfm") -> Tuple[boto3.Session, str, str]:
     # Authentication
     # Check if the profile exists before trying to use it
     available_profiles = boto3.Session().available_profiles
@@ -43,12 +45,20 @@ def get_s3_session(profile="lcfm") -> Tuple[boto3.Session, str]:
     else:
         endpoint_url = "https://s3.waw3-1.cloudferro.com"
         bucket_name = "lcfm_waw3-1_4b82fdbbe2580bdfc4f595824922507c0d7cae2541c0799982"
-    s3_client = b3_session.client(
-        "s3",
-        endpoint_url=endpoint_url,
-        region_name=None,  # Set to None or specify if required
-    )
-    return s3_client, bucket_name
+    return b3_session, endpoint_url, bucket_name
+
+
+def bootstrap_env(session: boto3.Session, endpoint_url: str = None) -> Env:
+    """Create a rasterio environment with proper AWS credentials."""
+    options = {
+        "GDAL_DISABLE_READDIR_ON_OPEN": "EMPTY_DIR",  # Improve performance
+    }
+
+    # Configure the AWS environment
+    aws_session = AWSSession(session, endpoint_url=endpoint_url.split("/")[-1])
+
+    # Return environment with configured AWS session
+    return Env(session=aws_session, **options)
 
 
 def get_block_path(product, version, product_path):
@@ -57,7 +67,7 @@ def get_block_path(product, version, product_path):
         block_id = row.block_id
         if product == "LCM-10":
             # LCFM/LCM-10/v008-m10-c84/blocks/16/S/GA/2020/MAP/LCFM_LCM-10_V008-M10-C84_2020_16SGA_100_MAP.tif
-            return f"{product_path}/LCFM/LCM-10/{version}/blocks/{tile[:2]}/{tile[2]}/{tile[-2:]}/2020/MAP/LCFM_LCM-10_{version.upper()}_2020_{tile}_{block_id:03d}_MAP.tif"
+            return f"{product_path}/LCM-10/{version}/blocks/{tile[:2]}/{tile[2]}/{tile[-2:]}/2020/MAP/LCFM_LCM-10_{version.upper()}_2020_{tile}_{block_id:03d}_MAP.tif"
         elif product == "TCD-10":
             # data/lcfm/TCD-10-raw/data_v2/LSF-ANNUAL_v100/TCD_v01-alpha02-harm/blocks/51/R/TP/2020/TCD-10/LCFM_LSF-ANNUAL_V100_2020_51RTP_026_TCD-10_masked.ti
             return f"{product_path}/{tile[:2]}/{tile[2]}/{tile[-2:]}/2020/TCD-10/LCFM_LSF-ANNUAL_{version.upper()}_2020_{tile}_{block_id:03d}_TCD-10_masked.tif"
@@ -156,7 +166,15 @@ def load_blocks(loc_geom, loc_epsg, blocks_grid_path):
 
 
 def process_loc(
-    gdf, id_loc, blocks_grid_path, product, version, product_path, output_path
+    gdf,
+    id_loc,
+    blocks_grid_path,
+    product,
+    version,
+    product_path,
+    output_path,
+    s3_session=None,
+    endpoint_url=None,
 ):
     loc_gdf = gdf[gdf["id_loc"] == id_loc]
     loc_geom = loc_gdf.union_all()
@@ -187,14 +205,17 @@ def process_loc(
             logger.debug(
                 f"1 intersecting block - same EPSG: {target_epsg} - extracting patch"
             )
-            extract_patch(blocks.iloc[0].path, out_fn, target_bounds)
+            with bootstrap_env(s3_session, endpoint_url):
+                print(blocks.iloc[0].path)
+                extract_patch(blocks.iloc[0].path, out_fn, target_bounds)
         else:
             # different epsg, merge the blocks
             logger.debug(
                 f"1 intersecting block - different EPSG: {target_epsg} - warping and extracting patch"
             )
             tmp_path = tmp_folder / f"{id_loc}_warped_tmp.tif"
-            warp_dataset(blocks.iloc[0].path, tmp_path, target_epsg)
+            with bootstrap_env(s3_session, endpoint_url):
+                warp_dataset(blocks.iloc[0].path, tmp_path, target_epsg)
             extract_patch(tmp_path, out_fn, target_bounds)
     else:
         # multiple blocks
@@ -208,7 +229,8 @@ def process_loc(
                 )
 
                 tmp_path = tmp_folder / f"{id_loc}_merged_tmp.tif"
-                merge_datasets(blocks.path.tolist(), tmp_path)
+                with bootstrap_env(s3_session, endpoint_url):
+                    merge_datasets(blocks.path.tolist(), tmp_path)
                 extract_patch(tmp_path, out_fn, target_bounds)
 
             else:
@@ -217,7 +239,8 @@ def process_loc(
                     f"{len(blocks)} intersecting blocks - different target EPSG: {target_epsg} - merging and warping"
                 )
                 tmp_path = tmp_folder / f"{id_loc}_merged_tmp.tif"
-                merge_datasets(blocks.path.tolist(), tmp_path)
+                with bootstrap_env(s3_session, endpoint_url):
+                    merge_datasets(blocks.path.tolist(), tmp_path)
 
                 tmp_path2 = tmp_folder / f"{id_loc}_merged_warped_tmp.tif"
                 warp_dataset(tmp_path, tmp_path2, target_epsg)
@@ -326,16 +349,24 @@ if __name__ == "__main__":
         # Should not tigger as the mutually exclusive group is `required=True`, just to be sure
         raise NotImplementedError("Please provide one of --lcm10_path or --tcd10_path")
 
+    # Get S3 client
+    session, endpoint_url, bucket_name = get_s3_session()
     # If blocks grid path does not exist, download it from S3
     blocks_grid_path = Path(args.blocks_grid_path) / args.blocks_grid_file
     if not blocks_grid_path.exists():
         logger.info(
             f"Blocks grid path {blocks_grid_path} does not exist, downloading from S3"
         )
-        s3_client, bucket_name = get_s3_session()
+        # Paths
         s3_file = Path("vito/grids/") / args.blocks_grid_file
         blocks_grid_path = Path("./resources/") / args.blocks_grid_file
         blocks_grid_path.parent.mkdir(exist_ok=True, parents=True)
+        # Client
+        s3_client = session.client(
+            "s3",
+            endpoint_url=endpoint_url,
+            region_name=None,  # Set to None or specify if required
+        )
         s3_client.download_file(
             bucket_name,
             str(s3_file),
@@ -362,4 +393,6 @@ if __name__ == "__main__":
             version,
             product_path,
             output_path,
+            session,
+            endpoint_url,
         )

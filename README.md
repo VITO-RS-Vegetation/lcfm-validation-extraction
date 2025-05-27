@@ -31,9 +31,14 @@ Navigate to the scripts folder and run:
 python lcm10_stac.py
 ```
 
-Alternatively, run:
+Alternatively, run this locally:
 ```
-python scripts/validation_extraction.py -l /vitodata/vegteam_vol2/products -b ./resources/ resources/100perc_sample_10m_epsg3857_idloc_selection.shp
+python scripts/validation_extraction.py -l /vitodata/vegteam_vol2/products/LCFM/ -b ./resources/ resources/100perc_sample_10m_epsg3857_idloc_selection.shp
+```
+
+Or with remote data access:
+```
+python scripts/validation_extraction.py -l /vsis3/lcfm_waw3-1_4b82fdbbe2580bdfc4f595824922507c0d7cae2541c0799982/vito/validation -b ./resources/ resources/100perc_sample_10m_epsg3857_idloc_selection.shp
 ```
 
 ### Limitations:
