@@ -1,4 +1,6 @@
 import os
+import shutil
+import subprocess
 from pathlib import Path
 from typing import Tuple
 
@@ -7,11 +9,9 @@ import geopandas as gpd
 import rasterio
 from dotenv import load_dotenv
 from loguru import logger
-from rasterio.enums import Resampling
 from rasterio.env import Env
 from rasterio.merge import merge
 from rasterio.session import AWSSession
-from rasterio.vrt import WarpedVRT
 from tqdm.auto import tqdm
 
 # Set the working directory
@@ -105,27 +105,53 @@ def merge_datasets(input_paths, output_path):
     return output_path, out_meta
 
 
-def warp_dataset(input_path, output_path, target_epsg):
-    with rasterio.open(input_path) as src:
-        vrt_options = {
-            "crs": f"EPSG:{target_epsg}",
-            "resampling": Resampling.nearest,
-        }
-        with WarpedVRT(src, **vrt_options) as vrt:
-            data = vrt.read()
-            out_meta = vrt.meta.copy()
-            out_meta.update(
-                {
-                    "driver": "GTiff",
-                    "height": vrt.height,
-                    "width": vrt.width,
-                    "transform": vrt.transform,
-                    "crs": f"EPSG:{target_epsg}",
-                }
-            )
+def warp_dataset(
+    input_path: Path, output_path: Path, target_epsg: int, source_epsg: int = None
+):
+    """
+    Warp a dataset using gdalwarp subprocess instead of rasterio.
 
-            with rasterio.open(output_path, "w", **out_meta) as dest:
-                dest.write(data)
+    Args:
+        input_path: Path to input GeoTIFF
+        output_path: Path to output GeoTIFF
+        target_epsg: Target EPSG code
+        source_epsg: Optional source EPSG code (if not defined in the input file)
+    """
+    # Find gdalwarp executable
+    gdalwarp_path = shutil.which("gdalwarp")
+    if not gdalwarp_path:
+        raise RuntimeError("gdalwarp executable not found in PATH")
+
+    # Build command
+    cmd = [
+        gdalwarp_path,
+        "-t_srs",
+        f"EPSG:{target_epsg}",
+        "-r",
+        "nearest",  # nearest neighbor resampling
+        "-co",
+        "COMPRESS=LZW",  # compression
+        "-overwrite",  # overwrite output if it exists
+    ]
+
+    # Add source EPSG if provided
+    if source_epsg:
+        cmd.extend(["-s_srs", f"EPSG:{source_epsg}"])
+
+    # Add input and output paths
+    cmd.extend([str(input_path), str(output_path)])
+
+    # Run command
+    logger.debug(f"Running gdalwarp: {' '.join(cmd)}")
+    result = subprocess.run(cmd, check=False, capture_output=True, text=True)
+
+    if result.returncode != 0:
+        logger.error(f"gdalwarp failed: {result.stderr}")
+        raise RuntimeError(f"gdalwarp failed: {result.stderr}")
+
+    # Get metadata from output file
+    with rasterio.open(output_path) as dst:
+        out_meta = dst.meta.copy()
 
     return output_path, out_meta
 
@@ -216,7 +242,9 @@ def process_loc(
             )
             tmp_path = tmp_folder / f"{id_loc}_warped_tmp.tif"
             with bootstrap_env(s3_session, endpoint_url):
-                warp_dataset(blocks.iloc[0].path, tmp_path, target_epsg)
+                warp_dataset(
+                    blocks.iloc[0].path, tmp_path, target_epsg, blocks.iloc[0].epsg
+                )
             extract_patch(tmp_path, out_fn, target_bounds)
     elif len(blocks) > 1:
         # multiple blocks
@@ -244,7 +272,7 @@ def process_loc(
                     merge_datasets(blocks.path.tolist(), tmp_path)
 
                 tmp_path2 = tmp_folder / f"{id_loc}_merged_warped_tmp.tif"
-                warp_dataset(tmp_path, tmp_path2, target_epsg)
+                warp_dataset(tmp_path, tmp_path2, target_epsg, blocks.iloc[0].epsg)
                 extract_patch(tmp_path2, out_fn, target_bounds)
 
         else:
