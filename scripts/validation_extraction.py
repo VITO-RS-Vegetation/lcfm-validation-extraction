@@ -173,6 +173,7 @@ def process_loc(
     version,
     product_path,
     output_path,
+    year=2020,
     s3_session=None,
     endpoint_url=None,
 ):
@@ -193,7 +194,7 @@ def process_loc(
     blocks_epsgs = blocks.epsg.unique()
     # Check if all blocks are in the same EPSG
 
-    out_fn = output_path / f"LCFM_{product}{version.upper()}_{id_loc}_MAP.tif"
+    out_fn = output_path / f"LCFM_{product}_{version.upper()}_{year}_{id_loc}_MAP.tif"
 
     tmp_folder = output_path / f"tmp_{id_loc}"
     tmp_folder.mkdir(exist_ok=True, parents=True)
@@ -217,7 +218,7 @@ def process_loc(
             with bootstrap_env(s3_session, endpoint_url):
                 warp_dataset(blocks.iloc[0].path, tmp_path, target_epsg)
             extract_patch(tmp_path, out_fn, target_bounds)
-    else:
+    elif len(blocks) > 1:
         # multiple blocks
         # check for multiple input epsgs
         if len(blocks_epsgs) == 1:
@@ -276,6 +277,8 @@ def process_loc(
             # tmp_path2 = tmp_folder / f"{id_loc}_merged_all_epsgs_warped_tmp.tif"
             # merge_datasets(merged_epsgs_paths, tmp_path2)
             # extract_patch(tmp_path2, out_fn, target_bounds)
+    else:
+        logger.warning(f"No blocks found for location {id_loc} after filtering")
 
     # clean up
     for path in tmp_folder.glob("*"):
@@ -393,6 +396,6 @@ if __name__ == "__main__":
             version,
             product_path,
             output_path,
-            session,
-            endpoint_url,
+            s3_session=session,
+            endpoint_url=endpoint_url,
         )
