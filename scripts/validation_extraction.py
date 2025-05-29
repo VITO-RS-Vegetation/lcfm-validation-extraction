@@ -6,6 +6,7 @@ from typing import Tuple
 
 import boto3
 import geopandas as gpd
+import numpy as np
 import rasterio
 from dotenv import load_dotenv
 from loguru import logger
@@ -106,7 +107,13 @@ def merge_datasets(input_paths, output_path):
 
 
 def warp_dataset(
-    input_path: Path, output_path: Path, target_epsg: int, source_epsg: int = None
+    input_path: Path,
+    output_path: Path,
+    target_epsg: int,
+    target_bounds: np.array,
+    source_epsg: int,
+    width=10,
+    height=10,
 ):
     """
     Warp a dataset using gdalwarp subprocess instead of rasterio.
@@ -121,12 +128,18 @@ def warp_dataset(
     gdalwarp_path = shutil.which("gdalwarp")
     if not gdalwarp_path:
         raise RuntimeError("gdalwarp executable not found in PATH")
-
+    # Convert np.array to string for gdalwarp
+    target_bounds = " ".join(map(str, target_bounds))
     # Build command
     cmd = [
         gdalwarp_path,
         "-t_srs",
         f"EPSG:{target_epsg}",
+        "-te",  # Separate -te flag from its values
+        *target_bounds.split(),  # Split values into separate arguments
+        "-ts",  # Separate -ts flag from its values
+        str(width),  # Width as separate argument
+        str(height),  # Height as separate argument
         "-r",
         "nearest",  # nearest neighbor resampling
         "-co",
@@ -243,7 +256,11 @@ def process_loc(
             tmp_path = tmp_folder / f"{id_loc}_warped_tmp.tif"
             with bootstrap_env(s3_session, endpoint_url):
                 warp_dataset(
-                    blocks.iloc[0].path, tmp_path, target_epsg, blocks.iloc[0].epsg
+                    blocks.iloc[0].path,
+                    tmp_path,
+                    target_epsg,
+                    target_bounds,
+                    blocks.iloc[0].epsg,
                 )
             extract_patch(tmp_path, out_fn, target_bounds)
     elif len(blocks) > 1:
@@ -272,7 +289,9 @@ def process_loc(
                     merge_datasets(blocks.path.tolist(), tmp_path)
 
                 tmp_path2 = tmp_folder / f"{id_loc}_merged_warped_tmp.tif"
-                warp_dataset(tmp_path, tmp_path2, target_epsg, blocks.iloc[0].epsg)
+                warp_dataset(
+                    tmp_path, tmp_path2, target_epsg, target_bounds, blocks.iloc[0].epsg
+                )
                 extract_patch(tmp_path2, out_fn, target_bounds)
 
         else:
