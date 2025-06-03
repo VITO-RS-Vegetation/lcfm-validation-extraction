@@ -31,16 +31,35 @@ AWS_SECRET_ACCESS_KEY=yyy
 ```
 
 ## Use
+
+### LCM-10
 Navigate to the scripts folder and run:
 ```
 python lcm10_stac.py
 ```
 
-### Limitations:
+Alternatively, run this locally:
+```
+python scripts/validation_extraction.py -l /vitodata/vegteam_vol2/products/LCFM/ -b ./resources/ -o ./results resources/100perc_sample_10m_epsg3857_idloc_selection.shp
+```
+
+Or with remote data access:
+```
+python scripts/validation_extraction.py -l /vsis3/lcfm_waw3-1_4b82fdbbe2580bdfc4f595824922507c0d7cae2541c0799982/vito/validation -b ./resources/ -o ./results resources/100perc_sample_10m_epsg3857_idloc_selection.shp
+```
+
+### TCD-10
+```
+python scripts/validation_extraction.py -t /vsis3/lcfm_waw3-1_4b82fdbbe2580bdfc4f595824922507c0d7cae2541c0799982/gaf/test/TCD-10-raw-masked/LCFM/TCD-10/v100/blocks -b ./resources/ --blocks-grid-file blocks_tropics_v12.fgb -v v100 -o ./results resources/100perc_sample_10m_epsg3857_idloc_selection.shp
+```
+
+### STAC-based workflow
+
+#### Limitations:
 - Reprojection case not checked --> this will raise an error instead
 - Limited to CloudFerro's S3; GAF's does not work --> can't ping lcfm-datahub.gaf.de, whereas this is possible for s3.waw3-1.cloudferro.com, so likely a firewall issue at GAF's side
 
-### Prerequisites:
+#### Prerequisites:
 Extractions require some actions from producer's side to work:
 1. Tile to UTM tiles
     - VITO: Run [tiler](https://github.com/VITO-RS-Vegetation/veg-workflows/blob/main/workflows/products/LCFM/LCM-10/tiling.py) with the --tiling utm argument
