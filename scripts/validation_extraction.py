@@ -62,16 +62,19 @@ def bootstrap_env(session: boto3.Session, endpoint_url: str = None) -> Env:
     return Env(session=aws_session, **options)
 
 
-def get_block_path(product, version, product_path):
+def get_block_path(product, version, product_path, layer="MAP"):
     def wrapped_get_block_path(row):
         tile = row.tile
         block_id = row.block_id
         if product == "LCM-10":
-            # LCFM/LCM-10/v008-m10-c84/blocks/16/S/GA/2020/MAP/LCFM_LCM-10_V008-M10-C84_2020_16SGA_100_MAP.tif
-            return f"{product_path}/LCM-10/{version}/blocks/{tile[:2]}/{tile[2]}/{tile[-2:]}/2020/MAP/LCFM_LCM-10_{version.upper()}_2020_{tile}_{block_id:03d}_MAP.tif"
+            # LCFM/LCM-10/v008-m10-c84/blocks/16/S/GA/2020/{layer}/LCFM_LCM-10_V008-M10-C84_2020_16SGA_100_{layer}.tif
+            return f"{product_path}/LCM-10/{version}/blocks/{tile[:2]}/{tile[2]}/{tile[-2:]}/2020/{layer}/LCFM_LCM-10_{version.upper()}_2020_{tile}_{block_id:03d}_{layer}.tif"
         elif product == "TCD-10":
-            # data/lcfm/TCD-10-raw/data_v2/LSF-ANNUAL_v100/TCD_v01-alpha02-harm/blocks/51/R/TP/2020/TCD-10/LCFM_LSF-ANNUAL_V100_2020_51RTP_026_TCD-10_masked.ti
-            return f"{product_path}/{tile[:2]}/{tile[2]}/{tile[-2:]}/2020/TCD-10/LCFM_LSF-ANNUAL_{version.upper()}_2020_{tile}_{block_id:03d}_TCD-10_masked.tif"
+            # data/lcfm/TCD-10-raw/data_v2/LSF-ANNUAL_v100/TCD_v01-alpha02-harm/blocks/51/R/TP/2020/TCD-10/LCFM_LSF-ANNUAL_V100_2020_51RTP_026_TCD-10_masked.tif
+            if layer == "MAP":
+                return f"{product_path}/{tile[:2]}/{tile[2]}/{tile[-2:]}/2020/TCD-10/LCFM_LSF-ANNUAL_{version.upper()}_2020_{tile}_{block_id:03d}_TCD-10_masked.tif"
+            else:
+                raise NotImplementedError("TCD-10 only supports 'MAP' layer")
         else:
             raise NotImplementedError
 
@@ -213,6 +216,7 @@ def process_loc(
     product_path,
     output_path,
     year=2020,
+    layer="MAP",
     s3_session=None,
     endpoint_url=None,
 ):
@@ -228,12 +232,15 @@ def process_loc(
         return
 
     blocks["path"] = blocks.apply(
-        get_block_path(product, version, product_path), axis=1
+        lambda row: get_block_path(product, version, product_path, layer=layer)(row),
+        axis=1,
     )
     blocks_epsgs = blocks.epsg.unique()
     # Check if all blocks are in the same EPSG
 
-    out_fn = output_path / f"LCFM_{product}_{version.upper()}_{year}_{id_loc}_MAP.tif"
+    out_fn = (
+        output_path / f"LCFM_{product}_{version.upper()}_{year}_{id_loc}_{layer}.tif"
+    )
 
     tmp_folder = output_path / f"tmp_{id_loc}"
     tmp_folder.mkdir(exist_ok=True, parents=True)
@@ -382,6 +389,12 @@ if __name__ == "__main__":
         help="Path to the output folder",
     )
     parser.add_argument(
+        "--layer",
+        type=str,
+        default="MAP",
+        help="Layer to extract (default: MAP)",
+    )
+    parser.add_argument(
         "input_shapefile",
         type=str,
         help="Path to the input shapefile with locations (id_loc, UTM, geometry) columns",
@@ -389,6 +402,7 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     version = args.version
+    layer = args.layer
     if args.lcm10_path:
         product = "LCM-10"
         product_path = args.lcm10_path
@@ -443,6 +457,7 @@ if __name__ == "__main__":
             version,
             product_path,
             output_path,
+            layer=layer,
             s3_session=session,
             endpoint_url=endpoint_url,
         )
