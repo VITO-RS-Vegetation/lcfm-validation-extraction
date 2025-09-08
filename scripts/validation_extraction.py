@@ -34,12 +34,12 @@ def get_s3_session(profile="lcfm") -> Tuple[boto3.Session, str, str]:
         )
         # Read s3 keys from .env files
         load_dotenv()
-        os.environ["AWS_ACCESS_KEY_ID"] = os.getenv("AWS_ACCESS_KEY_ID")
-        os.environ["AWS_SECRET_ACCESS_KEY"] = os.getenv("AWS_SECRET_ACCESS_KEY")
         b3_session = boto3.Session(
             aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
             aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
         )
+    os.environ["AWS_ACCESS_KEY_ID"] = b3_session.get_credentials().access_key
+    os.environ["AWS_SECRET_ACCESS_KEY"] = b3_session.get_credentials().secret_key
     if profile == "gaf":
         endpoint_url = "https://lcfm-datahub.gaf.de"
         bucket_name = "vito-upload"
@@ -364,7 +364,7 @@ if __name__ == "__main__":
         "-v",
         "--version",
         type=str,
-        default="v008-m10-c84",
+        default="v008-m10-c84-r08",
         help="LCM / TCD version to use",
     )
 
