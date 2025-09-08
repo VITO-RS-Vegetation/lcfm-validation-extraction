@@ -172,7 +172,7 @@ def warp_dataset(
     return output_path, out_meta
 
 
-def extract_patch(input_path, output_path, target_bounds):
+def extract_patch(input_path, output_path, target_bounds, layer="MAP"):
     with rasterio.open(input_path) as src:
         window = src.window(*target_bounds)
         data = src.read(window=window)
@@ -184,9 +184,15 @@ def extract_patch(input_path, output_path, target_bounds):
                 "width": window.width,
                 "transform": src.window_transform(window),
                 "crs": src.crs,
+                "dtype": data.dtype.name,
+                "count": src.count,
+                "nodata": src.nodata,  # keep if you want the 255 nodata
             }
         )
+
         with rasterio.open(output_path, "w", **out_meta) as dest:
+            if "PROB" in layer.upper():
+                dest._set_all_scales([0.004] * src.count)
             dest.write(data)
 
 
@@ -254,7 +260,7 @@ def process_loc(
             )
             with bootstrap_env(s3_session, endpoint_url):
                 print(blocks.iloc[0].path)
-                extract_patch(blocks.iloc[0].path, out_fn, target_bounds)
+                extract_patch(blocks.iloc[0].path, out_fn, target_bounds, layer=layer)
         else:
             # different epsg, merge the blocks
             logger.debug(
@@ -269,7 +275,7 @@ def process_loc(
                     target_bounds,
                     blocks.iloc[0].epsg,
                 )
-            extract_patch(tmp_path, out_fn, target_bounds)
+            extract_patch(tmp_path, out_fn, target_bounds, layer=layer)
     elif len(blocks) > 1:
         # multiple blocks
         # check for multiple input epsgs
@@ -284,7 +290,7 @@ def process_loc(
                 tmp_path = tmp_folder / f"{id_loc}_merged_tmp.tif"
                 with bootstrap_env(s3_session, endpoint_url):
                     merge_datasets(blocks.path.tolist(), tmp_path)
-                extract_patch(tmp_path, out_fn, target_bounds)
+                extract_patch(tmp_path, out_fn, target_bounds, layer=layer)
 
             else:
                 # only 1 epsg but different from target
@@ -299,7 +305,7 @@ def process_loc(
                 warp_dataset(
                     tmp_path, tmp_path2, target_epsg, target_bounds, blocks.iloc[0].epsg
                 )
-                extract_patch(tmp_path2, out_fn, target_bounds)
+                extract_patch(tmp_path2, out_fn, target_bounds, layer=layer)
 
         else:
             # multiple epsgs & multiple blocks. for each epsg, merge the blocks and warp to target
