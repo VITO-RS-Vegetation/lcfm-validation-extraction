@@ -45,7 +45,7 @@ def get_s3_session(profile="lcfm") -> Tuple[boto3.Session, str, str]:
         bucket_name = "vito-upload"
     else:
         s3_endpoint = "s3.waw3-1.cloudferro.com"
-        os.environ["AWS_S3_ENDPOINT"] = s3_endpoint
+        os.environ["AWS_S3_ENDPOINT"] = s3_endpoint  # For gdalwarp
         endpoint_url = f"https://{s3_endpoint}"
         bucket_name = "lcfm_waw3-1_4b82fdbbe2580bdfc4f595824922507c0d7cae2541c0799982"
     return b3_session, endpoint_url, bucket_name
