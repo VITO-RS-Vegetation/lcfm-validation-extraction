@@ -45,7 +45,7 @@ python scripts/validation_extraction.py -l /vitodata/vegteam_vol2/products/LCFM/
 
 Or with remote data access:
 ```
-python scripts/validation_extraction.py -l /vsis3/lcfm_waw3-1_4b82fdbbe2580bdfc4f595824922507c0d7cae2541c0799982/vito/validation -b ./resources/ -o ./results resources/100perc_sample_10m_epsg3857_idloc_selection.shp
+python scripts/validation_extraction.py -p LCM-10 --path /vsis3/lcfm_waw3-1_4b82fdbbe2580bdfc4f595824922507c0d7cae2541c0799982/vito/validation -y 2020 -b ./resources/ -o ./results resources/100perc_sample_10m_epsg3857_idloc_selection.shp
 ```
 
 For the PROB10, add:
@@ -53,10 +53,14 @@ For the PROB10, add:
 --layer PROB10
 ```
 
+For LCCM-10, use `-p LCCM-10` and `-y 2021` (or later).
+
 ### TCD-10
 ```
-python scripts/validation_extraction.py -t /vsis3/lcfm_waw3-1_4b82fdbbe2580bdfc4f595824922507c0d7cae2541c0799982/gaf/test/TCD-10-raw-masked/LCFM/TCD-10/v100/blocks -b ./resources/ --blocks-grid-file blocks_tropics_v12.fgb -v v100 -o ./results resources/100perc_sample_10m_epsg3857_idloc_selection.shp
+python scripts/validation_extraction.py -p TCD-10 --path /vsis3/lcfm_waw3-1_4b82fdbbe2580bdfc4f595824922507c0d7cae2541c0799982/gaf/test/TCD-10-raw-masked/LCFM/TCD-10/v100/blocks -y 2020 -b ./resources/ --blocks-grid-file blocks_tropics_v12.fgb -v v100 -o ./results resources/100perc_sample_10m_epsg3857_idloc_selection.shp
 ```
+
+Similar for TCPC-10, though using `-p TCPC-10` and `-y 2021` (or later).
 
 ### STAC-based workflow
 

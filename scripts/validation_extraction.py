@@ -62,21 +62,30 @@ def bootstrap_env(session: boto3.Session, endpoint_url: str = None) -> Env:
     return Env(session=aws_session, **options)
 
 
-def get_block_path(product, version, product_path, layer="MAP"):
+def get_block_path(product, version, product_path, year=2020, layer="MAP"):
     def wrapped_get_block_path(row):
         tile = row.tile
         block_id = row.block_id
         if product == "LCM-10":
             # LCFM/LCM-10/v008-m10-c84/blocks/16/S/GA/2020/{layer}/LCFM_LCM-10_V008-M10-C84_2020_16SGA_100_{layer}.tif
-            return f"{product_path}/LCM-10/{version}/blocks/{tile[:2]}/{tile[2]}/{tile[-2:]}/2020/{layer}/LCFM_LCM-10_{version.upper()}_2020_{tile}_{block_id:03d}_{layer}.tif"
+            return f"{product_path}/LCM-10/{version}/blocks/{tile[:2]}/{tile[2]}/{tile[-2:]}/{year}/{layer}/LCFM_LCM-10_{version.upper()}_{year}_{tile}_{block_id:03d}_{layer}.tif"
+        elif product == "LCCM-10":
+            # Similar structure to LCM-10
+            return f"{product_path}/LCCM-10/{version}/blocks/{tile[:2]}/{tile[2]}/{tile[-2:]}/{year}/{layer}/LCFM_LCCM-10_{version.upper()}_{year}_{tile}_{block_id:03d}_{layer}.tif"
         elif product == "TCD-10":
             # data/lcfm/TCD-10-raw/data_v2/LSF-ANNUAL_v100/TCD_v01-alpha02-harm/blocks/51/R/TP/2020/TCD-10/LCFM_LSF-ANNUAL_V100_2020_51RTP_026_TCD-10_masked.tif
             if layer == "MAP":
-                return f"{product_path}/{tile[:2]}/{tile[2]}/{tile[-2:]}/2020/TCD-10/LCFM_LSF-ANNUAL_{version.upper()}_2020_{tile}_{block_id:03d}_TCD-10_masked.tif"
+                return f"{product_path}/{tile[:2]}/{tile[2]}/{tile[-2:]}/{year}/TCD-10/LCFM_LSF-ANNUAL_{version.upper()}_{year}_{tile}_{block_id:03d}_TCD-10_masked.tif"
             else:
                 raise NotImplementedError("TCD-10 only supports 'MAP' layer")
+        elif product == "TCPC-10":
+            # Similar structure to TCD-10
+            if layer == "MAP":
+                return f"{product_path}/{tile[:2]}/{tile[2]}/{tile[-2:]}/{year}/TCPC-10/LCFM_LSF-ANNUAL_{version.upper()}_{year}_{tile}_{block_id:03d}_TCPC-10_masked.tif"
+            else:
+                raise NotImplementedError("TCPC-10 only supports 'MAP' layer")
         else:
-            raise NotImplementedError
+            raise NotImplementedError(f"Product {product} not supported")
 
     return wrapped_get_block_path
 
@@ -238,7 +247,7 @@ def process_loc(
         return
 
     blocks["path"] = blocks.apply(
-        lambda row: get_block_path(product, version, product_path, layer=layer)(row),
+        lambda row: get_block_path(product, version, product_path, year=year, layer=layer)(row),
         axis=1,
     )
     blocks_epsgs = blocks.epsg.unique()
@@ -352,18 +361,19 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Extract patches from LCFM blocks for a given location"
     )
-    product_group = parser.add_mutually_exclusive_group(required=True)
-    product_group.add_argument(
-        "-l",
-        "--lcm10-path",
+    parser.add_argument(
+        "-p",
+        "--product",
         type=str,
-        help="LCFM path to use",
+        required=True,
+        choices=["LCM-10", "TCD-10", "LCCM-10", "TCPC-10"],
+        help="Product type to extract (LCM-10, TCD-10, LCCM-10, or TCPC-10)",
     )
-    product_group.add_argument(
-        "-t",
-        "--tcd10-path",
+    parser.add_argument(
+        "--path",
         type=str,
-        help="TCD path to use",
+        required=True,
+        help="Path to the product data",
     )
 
     parser.add_argument(
@@ -401,6 +411,13 @@ if __name__ == "__main__":
         help="Layer to extract (default: MAP)",
     )
     parser.add_argument(
+        "-y",
+        "--year",
+        type=int,
+        default=2020,
+        help="Year to extract (default: 2020)",
+    )
+    parser.add_argument(
         "input_shapefile",
         type=str,
         help="Path to the input shapefile with locations (id_loc, UTM, geometry) columns",
@@ -409,15 +426,9 @@ if __name__ == "__main__":
     args = parser.parse_args()
     version = args.version
     layer = args.layer
-    if args.lcm10_path:
-        product = "LCM-10"
-        product_path = args.lcm10_path
-    elif args.tcd10_path:
-        product = "TCD-10"
-        product_path = args.tcd10_path
-    else:
-        # Should not tigger as the mutually exclusive group is `required=True`, just to be sure
-        raise NotImplementedError("Please provide one of --lcm10_path or --tcd10_path")
+    year = args.year
+    product = args.product
+    product_path = args.path
 
     # Get S3 client
     session, endpoint_url, bucket_name = get_s3_session()
@@ -463,6 +474,7 @@ if __name__ == "__main__":
             version,
             product_path,
             output_path,
+            year=year,
             layer=layer,
             s3_session=session,
             endpoint_url=endpoint_url,
