@@ -10,6 +10,7 @@ dependencies = [
   "boto3",
   "dotenv",
   "geopandas",
+  "lcfm-shapefiles",
   "loguru",
   "matplotlib",
   "numpy < 2",
@@ -29,6 +30,14 @@ jupyter = ["jupyter>=1.1", "ipython>=8.21","ipywidgets==8.1.5", "ipykernel==6.29
 
 [tool.uv]
 default-groups = ["dev"]
+
+[tool.uv.sources]
+lcfm-shapefiles = { index = "vito-atf-public" }
+
+[[tool.uv.index]]
+name = "vito-atf-public"
+url = "https://artifactory.vgt.vito.be/artifactory/api/pypi/python-packages-public/simple"
+explicit = true
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"

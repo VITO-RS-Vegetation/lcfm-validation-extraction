@@ -9,6 +9,7 @@ import geopandas as gpd
 import numpy as np
 import rasterio
 from dotenv import load_dotenv
+from lcfm_shapefiles.shapefiles import Shapefile
 from loguru import logger
 from rasterio.env import Env
 from rasterio.merge import merge
@@ -65,23 +66,22 @@ def bootstrap_env(session: boto3.Session, endpoint_url: str = None) -> Env:
 def get_block_path(product, version, product_path, year=2020, layer="MAP"):
     def wrapped_get_block_path(row):
         tile = row.tile
-        block_id = row.block_id
         if product == "LCM-10":
             # LCFM/LCM-10/v008-m10-c84/blocks/16/S/GA/2020/{layer}/LCFM_LCM-10_V008-M10-C84_2020_16SGA_100_{layer}.tif
-            return f"{product_path}/LCM-10/{version}/blocks/{tile[:2]}/{tile[2]}/{tile[-2:]}/{year}/{layer}/LCFM_LCM-10_{version.upper()}_{year}_{tile}_{block_id:03d}_{layer}.tif"
+            return f"{product_path}/LCM-10/{version}/blocks/{tile[:2]}/{tile[2]}/{tile[-2:]}/{year}/{layer}/LCFM_LCM-10_{version.upper()}_{year}_{tile}_{row.block_id:03d}_{layer}.tif"
         elif product == "LCCM-10":
             # Similar structure to LCM-10
-            return f"{product_path}/LCCM-10/{version}/blocks/{tile[:2]}/{tile[2]}/{tile[-2:]}/{year}/{layer}/LCFM_LCCM-10_{version.upper()}_{year}_{tile}_{block_id:03d}_{layer}.tif"
+            return f"{product_path}/LCCM-10/{version}/blocks/{tile[:2]}/{tile[2]}/{tile[-2:]}/{year}/{layer}/LCFM_LCCM-10_{version.upper()}_{year}_{tile}_{row.block_id:03d}_TRANSITION-MAP.tif"
         elif product == "TCD-10":
             # data/lcfm/TCD-10-raw/data_v2/LSF-ANNUAL_v100/TCD_v01-alpha02-harm/blocks/51/R/TP/2020/TCD-10/LCFM_LSF-ANNUAL_V100_2020_51RTP_026_TCD-10_masked.tif
             if layer == "MAP":
-                return f"{product_path}/{tile[:2]}/{tile[2]}/{tile[-2:]}/{year}/TCD-10/LCFM_LSF-ANNUAL_{version.upper()}_{year}_{tile}_{block_id:03d}_TCD-10_masked.tif"
+                return f"{product_path}/{tile[:2]}/{tile[2]}/{tile[-2:]}/{year}/TCD-10/LCFM_LSF-ANNUAL_{version.upper()}_{year}_{tile}_{row.block_id:03d}_TCD-10_masked.tif"
             else:
                 raise NotImplementedError("TCD-10 only supports 'MAP' layer")
         elif product == "TCPC-10":
-            # Similar structure to TCD-10
+            # Example: gaf/test/TCPC-10_raw/2026-01-21/50/N/QM/2021/TCPC-10/LCFM_TCPC_2020_2021_50NQM_CLASS.tif
             if layer == "MAP":
-                return f"{product_path}/{tile[:2]}/{tile[2]}/{tile[-2:]}/{year}/TCPC-10/LCFM_LSF-ANNUAL_{version.upper()}_{year}_{tile}_{block_id:03d}_TCPC-10_masked.tif"
+                return f"{product_path}/{tile[:2]}/{tile[2]}/{tile[-2:]}/{year}/TCPC-10/LCFM_TCPC_2020_{year}_{tile}_CLASS.tif"
             else:
                 raise NotImplementedError("TCPC-10 only supports 'MAP' layer")
         else:
@@ -205,9 +205,9 @@ def extract_patch(input_path, output_path, target_bounds, layer="MAP"):
             dest.write(data)
 
 
-def load_blocks(loc_geom, loc_epsg, blocks_grid_path):
+def load_blocks(loc_geom, loc_epsg, blocks_shapefile: Shapefile):
     # Load blocks
-    blocks = gpd.read_file(blocks_grid_path, mask=loc_geom)
+    blocks = gpd.read_file(blocks_shapefile.path, mask=loc_geom)
 
     # check if any block contains the location
     blocks_cont = blocks[blocks.contains(loc_geom)]
@@ -225,7 +225,7 @@ def load_blocks(loc_geom, loc_epsg, blocks_grid_path):
 def process_loc(
     gdf,
     id_loc,
-    blocks_grid_path,
+    blocks_shapefile: Shapefile,
     product,
     version,
     product_path,
@@ -240,14 +240,16 @@ def process_loc(
     target_epsg = gdf[gdf["id_loc"] == id_loc].iloc[0].UTM
     target_bounds = loc_gdf.to_crs(target_epsg).total_bounds.round()
 
-    blocks = load_blocks(loc_geom, target_epsg, blocks_grid_path)
+    blocks = load_blocks(loc_geom, target_epsg, blocks_shapefile)
 
     if blocks.empty:
         logger.warning(f"No blocks found for location {id_loc}")
         return
 
     blocks["path"] = blocks.apply(
-        lambda row: get_block_path(product, version, product_path, year=year, layer=layer)(row),
+        lambda row: get_block_path(
+            product, version, product_path, year=year, layer=layer
+        )(row),
         axis=1,
     )
     blocks_epsgs = blocks.epsg.unique()
@@ -385,17 +387,11 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "-b",
-        "--blocks-grid-path",
+        "-g",
+        "--grid-name",
         type=str,
-        default="/vitodata/vegteam/auxdata/grid/blocks_global2/",
-        help="Path to the blocks grid shapefile",
-    )
-    parser.add_argument(
-        "--blocks-grid-file",
-        type=str,
-        default="blocks_global_v12.fgb",
-        help="Path to the blocks grid shapefile",
+        default="blocks_global.fgb",
+        help="Name of the grid shapefile (from lcfm-shapefiles)",
     )
     parser.add_argument(
         "-o",
@@ -432,28 +428,9 @@ if __name__ == "__main__":
 
     # Get S3 client
     session, endpoint_url, bucket_name = get_s3_session()
-    # If blocks grid path does not exist, download it from S3
-    blocks_grid_path = Path(args.blocks_grid_path) / args.blocks_grid_file
-    if not blocks_grid_path.exists():
-        logger.info(
-            f"Blocks grid path {blocks_grid_path} does not exist, downloading from S3"
-        )
-        # Paths
-        s3_file = Path("vito/grids/") / args.blocks_grid_file
-        blocks_grid_path = Path("./resources/") / args.blocks_grid_file
-        blocks_grid_path.parent.mkdir(exist_ok=True, parents=True)
-        # Client
-        s3_client = session.client(
-            "s3",
-            endpoint_url=endpoint_url,
-            region_name=None,  # Set to None or specify if required
-        )
-        s3_client.download_file(
-            bucket_name,
-            str(s3_file),
-            str(blocks_grid_path),
-        )
-        logger.info(f"Downloaded blocks grid to {blocks_grid_path}")
+    # Load blocks grid using lcfm-shapefiles
+    blocks_shapefile = Shapefile(args.grid_name)
+    logger.info(f"Using grid: {args.grid_name}")
     input_shapefile = args.input_shapefile
     output_path = Path(args.output_path)
 
@@ -469,7 +446,7 @@ if __name__ == "__main__":
         process_loc(
             gdf,
             id_loc,
-            blocks_grid_path,
+            blocks_shapefile,
             product,
             version,
             product_path,

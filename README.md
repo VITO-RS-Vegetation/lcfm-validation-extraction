@@ -40,12 +40,12 @@ python lcm10_stac.py
 
 Alternatively, run this locally:
 ```
-python scripts/validation_extraction.py -l /vitodata/vegteam_vol2/products/LCFM/ -b ./resources/ -o ./results resources/100perc_sample_10m_epsg3857_idloc_selection.shp
+python scripts/validation_extraction.py -l /vitodata/vegteam_vol2/products/LCFM/ -o ./results resources/100perc_sample_10m_epsg3857_idloc_selection.shp
 ```
 
 Or with remote data access:
 ```
-python scripts/validation_extraction.py -p LCM-10 --path /vsis3/lcfm_waw3-1_4b82fdbbe2580bdfc4f595824922507c0d7cae2541c0799982/vito/validation -y 2020 -b ./resources/ -o ./results resources/100perc_sample_10m_epsg3857_idloc_selection.shp
+python scripts/validation_extraction.py -p LCM-10 --path /vsis3/lcfm_waw3-1_4b82fdbbe2580bdfc4f595824922507c0d7cae2541c0799982/vito/validation -y 2020 -o ./results resources/100perc_sample_10m_epsg3857_idloc_selection.shp
 ```
 
 For the PROB10, add:
@@ -57,10 +57,13 @@ For LCCM-10, use `-p LCCM-10` and `-y 2021` (or later).
 
 ### TCD-10
 ```
-python scripts/validation_extraction.py -p TCD-10 --path /vsis3/lcfm_waw3-1_4b82fdbbe2580bdfc4f595824922507c0d7cae2541c0799982/gaf/test/TCD-10-raw-masked/LCFM/TCD-10/v100/blocks -y 2020 -b ./resources/ --blocks-grid-file blocks_tropics_v12.fgb -v v100 -o ./results resources/100perc_sample_10m_epsg3857_idloc_selection.shp
+python scripts/validation_extraction.py -p TCD-10 --path /vsis3/lcfm_waw3-1_4b82fdbbe2580bdfc4f595824922507c0d7cae2541c0799982/gaf/test/TCD-10-raw-masked/LCFM/TCD-10/v100/blocks -y 2020 -v v100 -o ./results resources/100perc_sample_10m_epsg3857_idloc_selection.shp
 ```
 
-Similar for TCPC-10, though using `-p TCPC-10` and `-y 2021` (or later).
+### TCPC-10
+```
+python scripts/validation_extraction.py -p TCPC-10 --path /vsis3/lcfm_waw3-1_4b82fdbbe2580bdfc4f595824922507c0d7cae2541c0799982/gaf/test/TCPC-10_raw/2026-01-21 -y 2021 -g LCFM_100p_S2-tiles.fgb -v v002 -o ./results resources/100perc_sample_10m_epsg3857_idloc_selection.shp
+```
 
 ### STAC-based workflow
 
