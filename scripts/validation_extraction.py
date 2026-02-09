@@ -3,6 +3,7 @@ import shutil
 import subprocess
 from pathlib import Path
 from typing import Tuple
+from types import SimpleNamespace
 
 import boto3
 import geopandas as gpd
@@ -15,6 +16,7 @@ from rasterio.env import Env
 from rasterio.merge import merge
 from rasterio.session import AWSSession
 from tqdm.auto import tqdm
+from urllib.parse import urlparse
 
 # Set the working directory
 work_dir = Path(__file__).parent.parent.resolve()
@@ -70,8 +72,9 @@ def get_block_path(product, version, product_path, year=2020, layer="MAP"):
             # LCFM/LCM-10/v008-m10-c84/blocks/16/S/GA/2020/{layer}/LCFM_LCM-10_V008-M10-C84_2020_16SGA_100_{layer}.tif
             return f"{product_path}/LCM-10/{version}/blocks/{tile[:2]}/{tile[2]}/{tile[-2:]}/{year}/{layer}/LCFM_LCM-10_{version.upper()}_{year}_{tile}_{row.block_id:03d}_{layer}.tif"
         elif product == "LCCM-10":
-            # Similar structure to LCM-10
-            return f"{product_path}/LCCM-10/{version}/blocks/{tile[:2]}/{tile[2]}/{tile[-2:]}/{year}/{layer}/LCFM_LCCM-10_{version.upper()}_{year}_{tile}_{row.block_id:03d}_TRANSITION-MAP.tif"
+            # LCCM-10 always uses TRANSITION-MAP layer
+            layer_name = "TRANSITION-MAP"
+            return f"{product_path}/LCCM-10/{version}/blocks/{tile[:2]}/{tile[2]}/{tile[-2:]}/{year}/{layer_name}/LCFM_LCCM-10_{version.upper()}_{year}_{tile}_{row.block_id:03d}_{layer_name}.tif"
         elif product == "TCD-10":
             # data/lcfm/TCD-10-raw/data_v2/LSF-ANNUAL_v100/TCD_v01-alpha02-harm/blocks/51/R/TP/2020/TCD-10/LCFM_LSF-ANNUAL_V100_2020_51RTP_026_TCD-10_masked.tif
             if layer == "MAP":
@@ -94,6 +97,7 @@ def merge_datasets(input_paths, output_path):
     src_files_to_mosaic = []
 
     for path in input_paths:
+        logger.debug(f"Opening raster: {path}")
         src = rasterio.open(path)
         src_files_to_mosaic.append(src)
 
@@ -140,15 +144,16 @@ def warp_dataset(
     gdalwarp_path = shutil.which("gdalwarp")
     if not gdalwarp_path:
         raise RuntimeError("gdalwarp executable not found in PATH")
+
     # Convert np.array to string for gdalwarp
-    target_bounds = " ".join(map(str, target_bounds))
+    target_bounds_str = " ".join(map(str, target_bounds))
     # Build command
     cmd = [
         gdalwarp_path,
         "-t_srs",
         f"EPSG:{target_epsg}",
         "-te",  # Separate -te flag from its values
-        *target_bounds.split(),  # Split values into separate arguments
+        *target_bounds_str.split(),  # Split values into separate arguments
         "-ts",  # Separate -ts flag from its values
         str(width),  # Width as separate argument
         str(height),  # Height as separate argument
@@ -166,9 +171,20 @@ def warp_dataset(
     # Add input and output paths
     cmd.extend([str(input_path), str(output_path)])
 
+    # Set up environment for subprocess with GDAL S3 configuration
+    env = os.environ.copy()
+    _, endpoint_url, _ = get_s3_session()  # Ensure AWS credentials are set in the environment
+    # Configure GDAL to use the correct S3 endpoint
+    if endpoint_url and "/vsis3/" in str(input_path):
+        # Extract hostname from endpoint_url (e.g., 'https://s3.waw3-1.cloudferro.com' -> 's3.waw3-1.cloudferro.com')
+        parsed = urlparse(endpoint_url)
+        env["AWS_S3_ENDPOINT"] = parsed.netloc
+        env["AWS_HTTPS"] = "YES"
+        env["AWS_VIRTUAL_HOSTING"] = "FALSE"
+
     # Run command
     logger.debug(f"Running gdalwarp: {' '.join(cmd)}")
-    result = subprocess.run(cmd, check=False, capture_output=True, text=True)
+    result = subprocess.run(cmd, check=False, capture_output=True, text=True, env=env)
 
     if result.returncode != 0:
         logger.error(f"gdalwarp failed: {result.stderr}")
@@ -225,6 +241,7 @@ def load_blocks(loc_geom, loc_epsg, blocks_shapefile: Shapefile):
 def process_loc(
     gdf,
     id_loc,
+    id_col,
     blocks_shapefile: Shapefile,
     product,
     version,
@@ -235,9 +252,9 @@ def process_loc(
     s3_session=None,
     endpoint_url=None,
 ):
-    loc_gdf = gdf[gdf["id_loc"] == id_loc]
+    loc_gdf = gdf[gdf[id_col] == id_loc]
     loc_geom = loc_gdf.union_all()
-    target_epsg = gdf[gdf["id_loc"] == id_loc].iloc[0].UTM
+    target_epsg = gdf[gdf[id_col] == id_loc].iloc[0].UTM
     target_bounds = loc_gdf.to_crs(target_epsg).total_bounds.round()
 
     blocks = load_blocks(loc_geom, target_epsg, blocks_shapefile)
@@ -252,6 +269,7 @@ def process_loc(
         )(row),
         axis=1,
     )
+
     blocks_epsgs = blocks.epsg.unique()
     # Check if all blocks are in the same EPSG
 
@@ -270,7 +288,7 @@ def process_loc(
                 f"1 intersecting block - same EPSG: {target_epsg} - extracting patch"
             )
             with bootstrap_env(s3_session, endpoint_url):
-                print(blocks.iloc[0].path)
+                logger.debug(blocks.iloc[0].path)
                 extract_patch(blocks.iloc[0].path, out_fn, target_bounds, layer=layer)
         else:
             # different epsg, merge the blocks
@@ -314,7 +332,11 @@ def process_loc(
 
                 tmp_path2 = tmp_folder / f"{id_loc}_merged_warped_tmp.tif"
                 warp_dataset(
-                    tmp_path, tmp_path2, target_epsg, target_bounds, blocks.iloc[0].epsg
+                    tmp_path,
+                    tmp_path2,
+                    target_epsg,
+                    target_bounds,
+                    blocks.iloc[0].epsg,
                 )
                 extract_patch(tmp_path2, out_fn, target_bounds, layer=layer)
 
@@ -394,6 +416,12 @@ if __name__ == "__main__":
         help="Name of the grid shapefile (from lcfm-shapefiles)",
     )
     parser.add_argument(
+        "--grid-path",
+        type=str,
+        default=None,
+        help="Path to a local grid file (e.g., resources/blocks_global_v12.fgb). If provided, takes precedence over --grid-name",
+    )
+    parser.add_argument(
         "-o",
         "--output-path",
         type=str,
@@ -416,10 +444,22 @@ if __name__ == "__main__":
     parser.add_argument(
         "input_shapefile",
         type=str,
-        help="Path to the input shapefile with locations (id_loc, UTM, geometry) columns",
+        help="Path to the input shapefile with locations (id_loc, id, or hex_id; UTM, geometry) columns",
+    )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Enable debug logging",
     )
 
     args = parser.parse_args()
+    
+    # Configure logger based on debug flag
+    logger.remove()  # Remove default handler
+    if args.debug:
+        logger.add(lambda msg: print(msg, end=""), level="DEBUG")
+    else:
+        logger.add(lambda msg: print(msg, end=""), level="INFO")
     version = args.version
     layer = args.layer
     year = args.year
@@ -428,9 +468,16 @@ if __name__ == "__main__":
 
     # Get S3 client
     session, endpoint_url, bucket_name = get_s3_session()
-    # Load blocks grid using lcfm-shapefiles
-    blocks_shapefile = Shapefile(args.grid_name)
-    logger.info(f"Using grid: {args.grid_name}")
+
+    # Load blocks grid - use local path if provided, otherwise use lcfm-shapefiles
+    if args.grid_path:
+        # Create a simple object with a path attribute for local files
+        blocks_shapefile = SimpleNamespace(path=args.grid_path)
+        logger.info(f"Using local grid: {args.grid_path}")
+    else:
+        blocks_shapefile = Shapefile(args.grid_name)
+        logger.info(f"Using grid from lcfm-shapefiles: {args.grid_name}")
+
     input_shapefile = args.input_shapefile
     output_path = Path(args.output_path)
 
@@ -441,11 +488,39 @@ if __name__ == "__main__":
     gdf = gpd.read_file(input_shapefile)
     gdf = gdf.to_crs("EPSG:4326")
 
-    for id_loc in tqdm(gdf.id_loc.unique(), desc="Processing locations"):
+    # Support 'id_loc', 'id', or 'hex_id' column names
+    if "id_loc" in gdf.columns:
+        id_col = "id_loc"
+    elif "id" in gdf.columns:
+        id_col = "id"
+    elif "hex_id" in gdf.columns:
+        id_col = "hex_id"
+    else:
+        raise ValueError(
+            "Input shapefile must have either 'id_loc', 'id', or 'hex_id' column"
+        )
+
+    # For TCPC-10, filter to only tropical locations
+    if product == "TCPC-10":
+        if "Tropical" not in gdf.columns:
+            raise ValueError(
+                "Input shapefile for TCPC-10 must have a 'Tropical' column"
+            )
+        gdf = gdf[gdf["Tropical"] == 1]
+        logger.info(
+            f"Filtered to {len(gdf)} tropical locations for TCPC-10 (Tropical == 1)"
+        )
+        # Check if any locations remain after filtering
+        if gdf.empty:
+            logger.warning("No tropical locations found in the input shapefile")
+            exit(0)
+
+    for id_loc in tqdm(gdf[id_col].unique(), desc="Processing locations"):
         logger.debug(f"Processing location {id_loc}")
         process_loc(
             gdf,
             id_loc,
+            id_col,
             blocks_shapefile,
             product,
             version,

@@ -10,7 +10,7 @@ dependencies = [
   "boto3",
   "dotenv",
   "geopandas",
-  "lcfm-shapefiles",
+  "lcfm-shapefiles>=0.8.29",
   "loguru",
   "matplotlib",
   "numpy < 2",

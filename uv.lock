@@ -967,7 +967,7 @@ wheels = [
 
 [[package]]
 name = "lcfm-shapefiles"
-version = "0.8.26"
+version = "0.8.29"
 source = { registry = "https://artifactory.vgt.vito.be/artifactory/api/pypi/python-packages-public/simple" }
 dependencies = [
     { name = "loguru" },
@@ -975,7 +975,7 @@ dependencies = [
     { name = "shapely" },
 ]
 wheels = [
-    { url = "https://artifactory.vgt.vito.be/artifactory/api/pypi/python-packages-public/lcfm-shapefiles/0.8.26/lcfm_shapefiles-0.8.26-py3-none-any.whl", hash = "sha256:0fee2fc171c541da55347017669666b70340e4164e6b1ef0016f665c1a1328a8" },
+    { url = "https://artifactory.vgt.vito.be/artifactory/api/pypi/python-packages-public/lcfm-shapefiles/0.8.29/lcfm_shapefiles-0.8.29-py3-none-any.whl", hash = "sha256:a4ab34c1779815a2b6484ffd27ad211af09d4ad02c984e8f10706ff0d6c33cbd" },
 ]
 
 [[package]]
@@ -2005,7 +2005,7 @@ requires-dist = [
     { name = "ipython", marker = "extra == 'jupyter'", specifier = ">=8.21" },
     { name = "ipywidgets", marker = "extra == 'jupyter'", specifier = "==8.1.5" },
     { name = "jupyter", marker = "extra == 'jupyter'", specifier = ">=1.1" },
-    { name = "lcfm-shapefiles", index = "https://artifactory.vgt.vito.be/artifactory/api/pypi/python-packages-public/simple" },
+    { name = "lcfm-shapefiles", specifier = ">=0.8.29", index = "https://artifactory.vgt.vito.be/artifactory/api/pypi/python-packages-public/simple" },
     { name = "loguru" },
     { name = "matplotlib" },
     { name = "numpy", specifier = "<2" },

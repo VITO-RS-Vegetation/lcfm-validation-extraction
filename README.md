@@ -53,7 +53,14 @@ For the PROB10, add:
 --layer PROB10
 ```
 
-For LCCM-10, use `-p LCCM-10` and `-y 2021` (or later).
+For the 10% multi-annual version, use: `-v v009-m04-c110-er08-bh01-ch01`
+
+For LCCM-10, use:
+```
+python scripts/validation_extraction.py -p LCCM-10 -v v009-m04-c110-er08-bh01-ch01 --path /vsis3/lcfm_waw3-1_4b82fdbbe2580bdfc4f595824922507c0d7cae2541c0799982/vito/validation --grid-path resources/blocks_global_v12.fgb -y 2021 -o ./results resources/utm_zone_32611_square_100m.gpkg
+```
+
+Years can be up till 2024 (included)
 
 ### TCD-10
 ```
@@ -62,7 +69,7 @@ python scripts/validation_extraction.py -p TCD-10 --path /vsis3/lcfm_waw3-1_4b82
 
 ### TCPC-10
 ```
-python scripts/validation_extraction.py -p TCPC-10 --path /vsis3/lcfm_waw3-1_4b82fdbbe2580bdfc4f595824922507c0d7cae2541c0799982/gaf/test/TCPC-10_raw/2026-01-21 -y 2021 -g LCFM_100p_S2-tiles.fgb -v v002 -o ./results resources/100perc_sample_10m_epsg3857_idloc_selection.shp
+python scripts/validation_extraction.py -p TCPC-10 --path /vsis3/lcfm_waw3-1_4b82fdbbe2580bdfc4f595824922507c0d7cae2541c0799982/gaf/test/TCPC-10_raw/2026-01-21 -y 2021 -g LCFM_100p_S2-tiles.fgb -v v002 -o ./results resources/utm_zone_32737_square_100m.gpkg
 ```
 
 ### STAC-based workflow
