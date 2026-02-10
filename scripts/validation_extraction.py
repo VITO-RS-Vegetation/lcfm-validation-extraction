@@ -2,8 +2,9 @@ import os
 import shutil
 import subprocess
 from pathlib import Path
-from typing import Tuple
 from types import SimpleNamespace
+from typing import Tuple
+from urllib.parse import urlparse
 
 import boto3
 import geopandas as gpd
@@ -16,7 +17,6 @@ from rasterio.env import Env
 from rasterio.merge import merge
 from rasterio.session import AWSSession
 from tqdm.auto import tqdm
-from urllib.parse import urlparse
 
 # Set the working directory
 work_dir = Path(__file__).parent.parent.resolve()
@@ -173,7 +173,9 @@ def warp_dataset(
 
     # Set up environment for subprocess with GDAL S3 configuration
     env = os.environ.copy()
-    _, endpoint_url, _ = get_s3_session()  # Ensure AWS credentials are set in the environment
+    _, endpoint_url, _ = (
+        get_s3_session()
+    )  # Ensure AWS credentials are set in the environment
     # Configure GDAL to use the correct S3 endpoint
     if endpoint_url and "/vsis3/" in str(input_path):
         # Extract hostname from endpoint_url (e.g., 'https://s3.waw3-1.cloudferro.com' -> 's3.waw3-1.cloudferro.com')
@@ -453,7 +455,7 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
-    
+
     # Configure logger based on debug flag
     logger.remove()  # Remove default handler
     if args.debug:
@@ -493,8 +495,8 @@ if __name__ == "__main__":
         id_col = "id_loc"
     elif "id" in gdf.columns:
         id_col = "id"
-    elif "hex_id" in gdf.columns:
-        id_col = "hex_id"
+    elif "sid" in gdf.columns:
+        id_col = "sid"
     else:
         raise ValueError(
             "Input shapefile must have either 'id_loc', 'id', or 'hex_id' column"
