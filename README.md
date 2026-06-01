@@ -48,6 +48,11 @@ Or with remote data access:
 python scripts/validation_extraction.py -p LCM-10 --path /vsis3/lcfm_waw3-1_4b82fdbbe2580bdfc4f595824922507c0d7cae2541c0799982/vito/validation -y 2020 -o ./results resources/100perc_sample_10m_epsg3857_idloc_selection.shp
 ```
 
+Access UTM directly:
+```
+python scripts/validation_extraction.py -p LCM-10 --path /vsis3/lcfm_waw3-1_4b82fdbbe2580bdfc4f595824922507c0d7cae2541c0799982/vito/products -y 2020 -o ./results resources/100perc_sample_10m_epsg3857_idloc_selection.shp -v v120 --grid-path resources/LCFM_100p_S2-tiles.fgb
+```
+
 For the PROB10, add:
 ```
 --layer PROB10

@@ -418,6 +418,17 @@ def process_loc(
         path.unlink()
     tmp_folder.rmdir()
 
+    # Warn if the output contains only nodata
+    if out_fn.exists():
+        with rasterio.open(out_fn) as dst:
+            data = dst.read()
+            nodata_val = dst.nodata if dst.nodata is not None else 255
+        if np.all(data == nodata_val):
+            logger.warning(
+                f"Location {id_loc}: output contains only nodata ({nodata_val}). "
+                "The source tile may not cover this location."
+            )
+
 
 if __name__ == "__main__":
     import argparse
