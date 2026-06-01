@@ -65,23 +65,59 @@ def bootstrap_env(session: boto3.Session, endpoint_url: str = None) -> Env:
     return Env(session=aws_session, **options)
 
 
-def get_block_path(product, version, product_path, year=2020, layer="MAP"):
-    def wrapped_get_block_path(row):
+def get_standard_path(
+    product_name, version, product_path, tile, year, layer, row=None, is_tiles=False
+):
+    grid_type = "tiles_utm" if is_tiles else "blocks"
+    tile_parts = f"{tile[:2]}/{tile[2]}/{tile[-2:]}"
+    dir_prefix = (
+        f"{product_path}/{product_name}/{version}/{grid_type}/{tile_parts}/{year}"
+    )
+    basename = f"LCFM_{product_name}_{version.upper()}_{year}_{tile}"
+    if is_tiles:
+        return f"{dir_prefix}/{basename}_{layer}.tif"
+    else:
+        return f"{dir_prefix}/{layer}/{basename}_{row.block_id:03d}_{layer}.tif"
+
+
+def get_file_path(
+    product, version, product_path, year=2020, layer="MAP", is_tiles=False
+):
+    def wrapped_get_file_path(row):
         tile = row.tile
         if product == "LCM-10":
-            # LCFM/LCM-10/v008-m10-c84/blocks/16/S/GA/2020/{layer}/LCFM_LCM-10_V008-M10-C84_2020_16SGA_100_{layer}.tif
-            return f"{product_path}/LCM-10/{version}/blocks/{tile[:2]}/{tile[2]}/{tile[-2:]}/{year}/{layer}/LCFM_LCM-10_{version.upper()}_{year}_{tile}_{row.block_id:03d}_{layer}.tif"
+            return get_standard_path(
+                "LCM-10",
+                version,
+                product_path,
+                tile,
+                year,
+                layer,
+                row=row,
+                is_tiles=is_tiles,
+            )
         elif product == "LCCM-10":
-            # LCCM-10 always uses TRANSITION-MAP layer
-            layer_name = "TRANSITION-MAP"
-            return f"{product_path}/LCCM-10/{version}/blocks/{tile[:2]}/{tile[2]}/{tile[-2:]}/{year}/{layer_name}/LCFM_LCCM-10_{version.upper()}_{year}_{tile}_{row.block_id:03d}_{layer_name}.tif"
+            return get_standard_path(
+                "LCCM-10",
+                version,
+                product_path,
+                tile,
+                year,
+                "TRANSITION-MAP",
+                row=row,
+                is_tiles=is_tiles,
+            )
         elif product == "TCD-10":
+            if is_tiles:
+                raise NotImplementedError("TCD-10 not supported for UTM tiles")
             # data/lcfm/TCD-10-raw/data_v2/LSF-ANNUAL_v100/TCD_v01-alpha02-harm/blocks/51/R/TP/2020/TCD-10/LCFM_LSF-ANNUAL_V100_2020_51RTP_026_TCD-10_masked.tif
             if layer == "MAP":
                 return f"{product_path}/{tile[:2]}/{tile[2]}/{tile[-2:]}/{year}/TCD-10/LCFM_LSF-ANNUAL_{version.upper()}_{year}_{tile}_{row.block_id:03d}_TCD-10_masked.tif"
             else:
                 raise NotImplementedError("TCD-10 only supports 'MAP' layer")
         elif product == "TCPC-10":
+            if is_tiles:
+                raise NotImplementedError("TCPC-10 not supported for UTM tiles")
             # Example: gaf/test/TCPC-10_raw/2026-01-21/50/N/QM/2021/TCPC-10/LCFM_TCPC_2020_2021_50NQM_CLASS.tif
             if layer == "MAP":
                 return f"{product_path}/{tile[:2]}/{tile[2]}/{tile[-2:]}/{year}/TCPC-10/LCFM_TCPC_2020_{year}_{tile}_CLASS.tif"
@@ -90,7 +126,7 @@ def get_block_path(product, version, product_path, year=2020, layer="MAP"):
         else:
             raise NotImplementedError(f"Product {product} not supported")
 
-    return wrapped_get_block_path
+    return wrapped_get_file_path
 
 
 def merge_datasets(input_paths, output_path):
@@ -227,15 +263,15 @@ def load_blocks(loc_geom, loc_epsg, blocks_shapefile: Shapefile):
     # Load blocks
     blocks = gpd.read_file(blocks_shapefile.path, mask=loc_geom)
 
-    # check if any block contains the location
+    # Prefer tiles/blocks that fully contain the location over those that merely intersect
     blocks_cont = blocks[blocks.contains(loc_geom)]
-    if blocks_cont.empty:  # if not, return all blocks that intersect
+    if blocks_cont.empty:  # fall back to intersecting tiles/blocks
         return blocks
 
-    # check if any block is in the same epsg as the location
+    # Among containing tiles, prefer the one whose EPSG matches the location
     blocks_cont_epsg = blocks_cont[blocks_cont.epsg == loc_epsg]
     if blocks_cont_epsg.empty:
-        return blocks_cont
+        return blocks_cont.iloc[[0]]
     else:
         return blocks_cont_epsg.iloc[[0]]
 
@@ -253,6 +289,7 @@ def process_loc(
     layer="MAP",
     s3_session=None,
     endpoint_url=None,
+    is_tiles=False,
 ):
     loc_gdf = gdf[gdf[id_col] == id_loc]
     loc_geom = loc_gdf.union_all()
@@ -266,8 +303,8 @@ def process_loc(
         return
 
     blocks["path"] = blocks.apply(
-        lambda row: get_block_path(
-            product, version, product_path, year=year, layer=layer
+        lambda row: get_file_path(
+            product, version, product_path, year=year, layer=layer, is_tiles=is_tiles
         )(row),
         axis=1,
     )
@@ -283,9 +320,9 @@ def process_loc(
     tmp_folder.mkdir(exist_ok=True, parents=True)
 
     if len(blocks) == 1:
-        # only 1 block
-        if target_epsg == blocks.iloc[0].epsg:
-            # same epsg, just read the target window
+        # only 1 block/tile
+        if target_epsg == blocks.iloc[0].epsg and not is_tiles:
+            # same epsg and blocks (10m pixels guaranteed): read the target window directly
             logger.debug(
                 f"1 intersecting block - same EPSG: {target_epsg} - extracting patch"
             )
@@ -293,9 +330,10 @@ def process_loc(
                 logger.debug(blocks.iloc[0].path)
                 extract_patch(blocks.iloc[0].path, out_fn, target_bounds, layer=layer)
         else:
-            # different epsg, merge the blocks
+            # tiles have variable pixel size depending on MGRS zone, so always warp
+            # to get a consistent 10x10 output; also handles different-EPSG blocks
             logger.debug(
-                f"1 intersecting block - different EPSG: {target_epsg} - warping and extracting patch"
+                f"1 intersecting block - {'UTM tile (resampling to 10m)' if is_tiles and target_epsg == blocks.iloc[0].epsg else 'different EPSG'}: {target_epsg} - warping and extracting patch"
             )
             tmp_path = tmp_folder / f"{id_loc}_warped_tmp.tif"
             with bootstrap_env(s3_session, endpoint_url):
@@ -379,6 +417,17 @@ def process_loc(
     for path in tmp_folder.glob("*"):
         path.unlink()
     tmp_folder.rmdir()
+
+    # Warn if the output contains only nodata
+    if out_fn.exists():
+        with rasterio.open(out_fn) as dst:
+            data = dst.read()
+            nodata_val = dst.nodata if dst.nodata is not None else 255
+        if np.all(data == nodata_val):
+            logger.warning(
+                f"Location {id_loc}: output contains only nodata ({nodata_val}). "
+                "The source tile may not cover this location."
+            )
 
 
 if __name__ == "__main__":
@@ -480,6 +529,14 @@ if __name__ == "__main__":
         blocks_shapefile = Shapefile(args.grid_name)
         logger.info(f"Using grid from lcfm-shapefiles: {args.grid_name}")
 
+    # Detect grid type: tiles FGB has no 'block_id' column
+    _sample = gpd.read_file(blocks_shapefile.path, rows=1)
+    is_tiles = "block_id" not in _sample.columns
+    if is_tiles:
+        logger.info("Grid mode: UTM tiles")
+    else:
+        logger.info("Grid mode: blocks")
+
     input_shapefile = args.input_shapefile
     output_path = Path(args.output_path)
 
@@ -532,4 +589,5 @@ if __name__ == "__main__":
             layer=layer,
             s3_session=session,
             endpoint_url=endpoint_url,
+            is_tiles=is_tiles,
         )
