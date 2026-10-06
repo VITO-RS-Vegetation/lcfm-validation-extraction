@@ -116,11 +116,12 @@ def get_file_path(
             else:
                 raise NotImplementedError("TCD-10 only supports 'MAP' layer")
         elif product == "TCPC-10":
-            if is_tiles:
-                raise NotImplementedError("TCPC-10 not supported for UTM tiles")
-            # Example: gaf/test/TCPC-10_raw/2026-01-21/50/N/QM/2021/TCPC-10/LCFM_TCPC_2020_2021_50NQM_CLASS.tif
             if layer == "MAP":
-                return f"{product_path}/{tile[:2]}/{tile[2]}/{tile[-2:]}/{year}/TCPC-10/LCFM_TCPC_2020_{year}_{tile}_CLASS.tif"
+                tile_dir = f"{product_path.rstrip('/')}/{tile[:2]}/{tile[2]}/{tile[-2:]}/{year}"
+                basename = f"LCFM_TCPC-10_{version.upper()}_{year}_{tile}_CHANGE.tif"
+                if is_tiles:
+                    return f"{tile_dir}/{basename}"
+                return f"{tile_dir}/TCPC-10/{basename}"
             else:
                 raise NotImplementedError("TCPC-10 only supports 'MAP' layer")
         else:
