@@ -74,7 +74,7 @@ python scripts/validation_extraction.py -p TCD-10 --path /vsis3/lcfm_waw3-1_4b82
 
 ### TCPC-10
 ```
-python scripts/validation_extraction.py -p TCPC-10 --path /vsis3/lcfm_waw3-1_4b82fdbbe2580bdfc4f595824922507c0d7cae2541c0799982/gaf/test/TCPC-10_raw/2026-01-21 -y 2021 -g LCFM_100p_S2-tiles.fgb -v v002 -o ./results resources/utm_zone_32737_square_100m.gpkg
+python scripts/validation_extraction.py -p TCPC-10 --path /vsis3/lcfm_waw3-1_4b82fdbbe2580bdfc4f595824922507c0d7cae2541c0799982/gaf/products/TCPC-10/v021/tiles_utm/ -y 2021 --grid-path resources/LCFM_100p_S2-tiles.fgb -v v021 -o ./results resources/tcpc_all_premier_sampling.gpkg
 ```
 
 ### STAC-based workflow
