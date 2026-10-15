@@ -1,6 +1,9 @@
+import argparse
 import importlib.util
 from pathlib import Path
 from types import SimpleNamespace
+
+import pytest
 
 script_path = (
     Path(__file__).resolve().parents[1] / "scripts" / "validation_extraction.py"
@@ -13,6 +16,13 @@ if script_spec is None or script_spec.loader is None:
 validation_extraction = importlib.util.module_from_spec(script_spec)
 script_spec.loader.exec_module(validation_extraction)
 get_file_path = validation_extraction.get_file_path
+
+
+def test_version_must_be_lowercase():
+    with pytest.raises(argparse.ArgumentTypeError, match="version must be lowercase"):
+        validation_extraction.validate_version("V140")
+
+    assert validation_extraction.validate_version("v140") == "v140"
 
 
 def test_tcpc_utm_tile_path_uses_tiles_root():

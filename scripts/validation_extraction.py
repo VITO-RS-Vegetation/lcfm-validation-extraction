@@ -1,3 +1,4 @@
+import argparse
 import os
 import shutil
 import subprocess
@@ -21,6 +22,14 @@ from tqdm.auto import tqdm
 # Set the working directory
 work_dir = Path(__file__).parent.parent.resolve()
 os.chdir(work_dir)
+
+
+def validate_version(version: str) -> str:
+    if version != version.lower():
+        raise argparse.ArgumentTypeError(
+            "version must be lowercase (for example, v140)"
+        )
+    return version
 
 
 def get_s3_session(profile="lcfm") -> Tuple[boto3.Session, str, str]:
@@ -432,8 +441,6 @@ def process_loc(
 
 
 if __name__ == "__main__":
-    import argparse
-
     parser = argparse.ArgumentParser(
         description="Extract patches from LCFM blocks for a given location"
     )
@@ -455,9 +462,9 @@ if __name__ == "__main__":
     parser.add_argument(
         "-v",
         "--version",
-        type=str,
+        type=validate_version,
         default="v008-m10-c84-r08",
-        help="LCM / TCD version to use",
+        help="LCM / TCD version to use (lowercase, e.g. v140)",
     )
 
     parser.add_argument(
